@@ -589,6 +589,46 @@ describe('GitHubScmProvider reads', () => {
     });
   });
 
+  it('asks again while GitHub does not show a fresh artifact yet', async () => {
+    const sha = 'b'.repeat(40);
+    jest.useFakeTimers();
+    try {
+      const digest = 'a'.repeat(64);
+      const found = () =>
+        new Response(
+          JSON.stringify({
+            id: 987,
+            name: 'initpad-image.tar',
+            size_in_bytes: 123,
+            expired: false,
+            expires_at: '2026-07-21T00:00:00Z',
+            digest: `sha256:${digest}`,
+            workflow_run: { id: 456, repository_id: 101, head_sha: sha },
+          }),
+          { status: 200 },
+        );
+      const fetch = jest
+        .fn()
+        .mockResolvedValueOnce(new Response('{}', { status: 404 }))
+        .mockResolvedValueOnce(new Response('{}', { status: 404 }))
+        .mockImplementation(async () => found());
+      const { provider } = make(fetch);
+
+      const resolved = provider.resolveBuildArtifact(repository(), {
+        providerArtifactId: '987',
+        digest,
+        commitSha: sha,
+        expectedName: 'initpad-image.tar',
+      });
+      await jest.runAllTimersAsync();
+
+      await expect(resolved).resolves.toMatchObject({ providerArtifactId: '987' });
+      expect(fetch).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('rejects artifact metadata from another commit', async () => {
     const digest = 'a'.repeat(64);
     const { provider } = make(

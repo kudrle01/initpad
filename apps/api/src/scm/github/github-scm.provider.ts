@@ -63,6 +63,8 @@ const READ_CONTENTS = { metadata: 'read', contents: 'read' };
 const READ_STATUSES = { metadata: 'read', contents: 'read', statuses: 'read' };
 const READ_CHECKS = { metadata: 'read', contents: 'read', checks: 'read' };
 const READ_ACTIONS = { metadata: 'read', actions: 'read' };
+// Waits before asking again for an artifact GitHub does not show yet.
+export const ARTIFACT_VISIBILITY_RETRY_MS = [1000, 2000, 4000];
 const WRITE_ACTIONS = { metadata: 'read', actions: 'write' };
 const WRITE_CONTENTS = { metadata: 'read', contents: 'write' };
 const WRITE_SCAFFOLD = { metadata: 'read', contents: 'write', workflows: 'write' };
@@ -1139,10 +1141,15 @@ export class GitHubScmProvider implements ScmProvider {
     const callbackDigest = this.normalizeArtifactDigest(locator.digest);
     const token = await this.token(repository, READ_ACTIONS);
     const repo = `${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
-    const response = await this.gh(
-      `/repos/${repo}/actions/artifacts/${encodeURIComponent(locator.providerArtifactId)}`,
-      token,
-    );
+    // The callback runs in the job that has just uploaded the artifact, and
+    // GitHub can answer 404 for a few seconds before the artifact is visible.
+    const path = `/repos/${repo}/actions/artifacts/${encodeURIComponent(locator.providerArtifactId)}`;
+    let response = await this.gh(path, token);
+    for (const delayMs of ARTIFACT_VISIBILITY_RETRY_MS) {
+      if (response.status !== 404) break;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      response = await this.gh(path, token);
+    }
     if (!response.ok) {
       throw scmStatusError(
         'GitHub',
