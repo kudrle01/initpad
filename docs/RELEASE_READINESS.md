@@ -1,9 +1,9 @@
 # Release readiness a známá omezení
 
 Release baseline tohoto dokumentu je doporučený Agent 0.17.0, odmítnuté
-release 0.13.0 a 0.14.0 a nejnovější vydaná platforma `initpad-v0.2.42`.
-Agent 0.17.0 a platformy 0.2.36, 0.2.37, 0.2.38, 0.2.40, 0.2.41 a 0.2.42
-prošly anonymním auditem. Platformy 0.2.38 (ADR-187) a 0.2.40 (ADR-188 a aktualizace
+release 0.13.0 a 0.14.0 a nejnovější vydaná platforma `initpad-v0.2.43`.
+Agent 0.17.0 a platformy 0.2.36, 0.2.37, 0.2.38, 0.2.40, 0.2.41, 0.2.42 a
+0.2.43 prošly anonymním auditem. Platformy 0.2.38 (ADR-187) a 0.2.40 (ADR-188 a aktualizace
 závislostí) byly 16. listopadu 2026 povýšeny na stable bez živé acceptance
 aktualizace; kandidát 0.2.39 nebyl povýšen a nahrazuje ho 0.2.40. Platforma
 0.2.41 (brandované HTML šablony transakčních e-mailů) byla 17. listopadu 2026
@@ -11,7 +11,10 @@ povýšena na stable rovněž bez živé acceptance aktualizace. Platforma 0.2.4
 (ADR-189: týmové workspace s GitHub organizacemi, převod chyb GitHubu na
 502/503/504, oprava zranitelnosti Next.js v šabloně) byla 17. listopadu 2026
 povýšena na stable také bez živé acceptance aktualizace; v SaaS vyžaduje
-oprávnění GitHub App `Members: Read and write`. Dne 14. listopadu 2026 prošly v lokálním Dockeru živou candidate acceptance
+oprávnění GitHub App `Members: Read and write`. Platforma 0.2.43 (připojení GitHubu
+v nastavení workspace, oprava obnovy organizační instalace v týmu a mazání
+projektu bez repozitáře) byla 17. listopadu 2026 povýšena na stable bez živé
+acceptance aktualizace; GitHub App potřebuje zapnuté `Redirect on update`. Dne 14. listopadu 2026 prošly v lokálním Dockeru živou candidate acceptance
 aktualizace z 0.2.35 tlačítkem **Install update**: `initpad-v0.2.36` za 38 s se
 zachováním dat, identit a workloadů (`after-success` i health-gated
 `fault-rollback`) a `initpad-v0.2.37` za 37 s, po které vestavěný Docker nasadí
@@ -275,6 +278,7 @@ npm run audit:public-release -- --tag initpad-v0.2.38
 npm run audit:public-release -- --tag initpad-v0.2.40
 npm run audit:public-release -- --tag initpad-v0.2.41
 npm run audit:public-release -- --tag initpad-v0.2.42
+npm run audit:public-release -- --tag initpad-v0.2.43
 npm run audit:public-release -- --tag agent-v0.14.2
 npm run audit:public-release -- --tag agent-v0.14.3
 npm run audit:public-release -- --tag agent-v0.17.0
