@@ -101,6 +101,9 @@ describe('MailDeliveryService', () => {
         subject: 'Reset your InitPad password',
         messageId: '<mail-1@smtp.example.test>',
         html: expect.stringContaining('Alice &lt;Admin&gt;'),
+        attachments: [
+          expect.objectContaining({ cid: 'initpad-logo@initpad', contentDisposition: 'inline' }),
+        ],
       }),
     );
     expect(row.status).toBe('sent');

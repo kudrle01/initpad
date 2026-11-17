@@ -5,8 +5,10 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { config, mailDeliveryConfigured } from '../config';
 import { decryptSecret, encryptSecret } from '../common/secret';
 import { PrismaService } from '../prisma/prisma.service';
+import { renderAuthMail, type AuthMailPayload, type MailKind } from './templates/auth-mail';
+import { LOGO_CID, LOGO_PNG_BASE64 } from './templates/brand';
 
-export type MailKind = 'email_verify' | 'password_reset' | 'activation' | 'workspace_invite';
+export type { MailKind };
 
 export interface QueueAuthMailInput {
   // Null for a workspace invitation to an address without an account.
@@ -23,13 +25,13 @@ export interface QueueAuthMailInput {
 
 type OutboxDatabase = Prisma.TransactionClient | PrismaService;
 
-interface AuthMailPayload {
-  displayName: string | null;
-  url: string;
-  workspaceName?: string | null;
-  inviterName?: string | null;
-  role?: string | null;
-}
+const LOGO_ATTACHMENT = {
+  filename: 'initpad.png',
+  content: Buffer.from(LOGO_PNG_BASE64, 'base64'),
+  contentType: 'image/png',
+  cid: LOGO_CID,
+  contentDisposition: 'inline' as const,
+};
 
 const POLL_INTERVAL_MS = 10_000;
 const LEASE_TIMEOUT_MS = 5 * 60_000;
@@ -182,6 +184,7 @@ export class MailDeliveryService implements OnModuleInit, OnModuleDestroy {
         subject: rendered.subject,
         text: rendered.text,
         html: rendered.html,
+        attachments: [LOGO_ATTACHMENT],
         // Stable across a lease retry, allowing SMTP receivers to deduplicate
         // the rare crash-after-send-before-acknowledge case.
         messageId: `<${message.id}@${config.mail.host}>`,
@@ -237,69 +240,6 @@ export class MailDeliveryService implements OnModuleInit, OnModuleDestroy {
       role: text(payload.role),
     };
   }
-}
-
-function renderAuthMail(kind: MailKind, payload: AuthMailPayload) {
-  if (kind === 'workspace_invite') return renderInvitationMail(payload);
-  const heading = {
-    email_verify: 'Verify your InitPad e-mail',
-    password_reset: 'Reset your InitPad password',
-    activation: 'Activate your InitPad account',
-  }[kind];
-  const action = {
-    email_verify: 'Verify e-mail',
-    password_reset: 'Reset password',
-    activation: 'Activate account',
-  }[kind];
-  const greeting = payload.displayName ? `Hello ${payload.displayName},` : 'Hello,';
-  const text = `${greeting}\n\n${heading}. Open this single-use link:\n${payload.url}\n\nIf you did not request this, you can ignore this message.`;
-  const escapedUrl = escapeHtml(payload.url);
-  return {
-    subject: heading,
-    text,
-    html:
-      `<p>${escapeHtml(greeting)}</p><p>${escapeHtml(heading)}.</p>` +
-      `<p><a href="${escapedUrl}">${escapeHtml(action)}</a></p>` +
-      '<p>If you did not request this, you can ignore this message.</p>',
-  };
-}
-
-function renderInvitationMail(payload: AuthMailPayload) {
-  // Names are user-chosen; a line break must never reach a mail header.
-  const workspace = oneLine(payload.workspaceName) || 'a team workspace';
-  const inviter = oneLine(payload.inviterName) || 'A workspace administrator';
-  const role = payload.role || 'member';
-  const subject = `You are invited to ${workspace} on InitPad`;
-  const sentence = `${inviter} invited you to join ${workspace} on InitPad as ${role}.`;
-  const text =
-    `Hello,\n\n${sentence} Open this link to accept the invitation:\n${payload.url}\n\n` +
-    'The invitation expires in 7 days and works once. If you did not expect it, ignore this message.';
-  const escapedUrl = escapeHtml(payload.url);
-  return {
-    subject,
-    text,
-    html:
-      `<p>Hello,</p><p>${escapeHtml(sentence)}</p>` +
-      `<p><a href="${escapedUrl}">Accept invitation</a></p>` +
-      '<p>The invitation expires in 7 days and works once. If you did not expect it, ignore this message.</p>',
-  };
-}
-
-function oneLine(value: string | null | undefined): string {
-  return (value ?? '').replace(/[\r\n\0]+/g, ' ').trim();
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => {
-    const entities: Record<string, string> = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-    };
-    return entities[character];
-  });
 }
 
 function safeError(error: unknown): string {
