@@ -13,6 +13,7 @@ import {
   validateConfig,
 } from './config';
 import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
+import { ScmExceptionFilter } from './scm/scm-exception.filter';
 import { requestContextMiddleware } from './common/request-context';
 import { csrfProtection } from './common/csrf-protection';
 import { StructuredLogger } from './common/structured-logger';
@@ -81,7 +82,7 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: false },
     }),
   );
-  app.useGlobalFilters(new PrismaExceptionFilter());
+  app.useGlobalFilters(new PrismaExceptionFilter(), new ScmExceptionFilter());
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   await app.listen(port);
   logger.log({ event: 'platform.started', port }, 'Bootstrap');

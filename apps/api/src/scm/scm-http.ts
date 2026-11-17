@@ -22,8 +22,12 @@ export class ScmHttpStatusError extends Error {
     readonly operation: string,
     readonly status: number,
     message?: string,
+    /** The provider's own validation text, sanitized by `readProviderErrorDetail`. */
+    readonly detail?: string,
   ) {
-    super(`${message ?? `${provider} ${operation} failed`} (HTTP ${status})`);
+    super(
+      `${message ?? `${provider} ${operation} failed`} (HTTP ${status})${detail ? `: ${detail}` : ''}`,
+    );
     this.name = 'ScmHttpStatusError';
     this.kind = failureKind(status);
     this.retryable = status === 408 || status === 425 || status === 429 || status >= 500;
@@ -92,8 +96,52 @@ export function scmStatusError(
   operation: string,
   response: Pick<Response, 'status'>,
   message?: string,
+  detail?: string,
 ): ScmHttpStatusError {
-  return new ScmHttpStatusError(provider, operation, response.status, message);
+  return new ScmHttpStatusError(provider, operation, response.status, message, detail);
+}
+
+const MAX_DETAIL_LENGTH = 200;
+
+/**
+ * Reads the provider's explanation of a rejected request, such as GitHub's
+ * "Validation Failed" with its `errors[]`, so an operator can see why a call
+ * failed. Only `message` and the per-error `message`/`code` strings are kept,
+ * as one line without URLs, so a body can never smuggle a link, a header or
+ * an unbounded payload into logs or API responses. A body that is missing or
+ * not JSON yields no detail.
+ */
+export async function readProviderErrorDetail(response: unknown): Promise<string | undefined> {
+  const json = (response as { json?: unknown } | null)?.json;
+  if (typeof json !== 'function') return undefined;
+  let body: unknown;
+  try {
+    body = await (json as () => Promise<unknown>).call(response);
+  } catch {
+    return undefined;
+  }
+  if (!body || typeof body !== 'object') return undefined;
+  const { message, errors } = body as { message?: unknown; errors?: unknown };
+  const parts: string[] = [];
+  if (typeof message === 'string') parts.push(message);
+  if (Array.isArray(errors)) {
+    for (const entry of errors.slice(0, 3)) {
+      if (typeof entry === 'string') parts.push(entry);
+      else if (entry && typeof entry === 'object') {
+        const { message: text, code } = entry as { message?: unknown; code?: unknown };
+        if (typeof text === 'string') parts.push(text);
+        else if (typeof code === 'string') parts.push(code);
+      }
+    }
+  }
+  const detail = parts
+    .join(' - ')
+    .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/\p{Cc}+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_DETAIL_LENGTH);
+  return detail || undefined;
 }
 
 /** Collects finite page-based APIs and fails instead of silently truncating. */

@@ -139,6 +139,18 @@ export const csApi = {
     'CI nevytvořilo nasaditelný image (výsledek CI: {status}). Otevřete logy běhu v repozitáři, opravte neúspěšnou úlohu a spusťte ji znovu.',
   'Cleanup pending: {detail}': 'Čeká se na úklid: {detail}',
   'Cleanup failed: {detail}': 'Úklid selhal: {detail}',
+  '{provider} did not answer in time. Try again in a moment.':
+    '{provider} neodpověděl včas. Zkuste to za chvíli znovu.',
+  '{provider} could not be reached. Try again in a moment.':
+    '{provider} není dostupný. Zkuste to za chvíli znovu.',
+  "Could not grant repository access to '{name}' (HTTP {status}): {detail}":
+    'GitHub odmítl udělit uživateli {name} přístup k repozitáři (HTTP {status}): {detail}',
+  "Could not grant repository access to '{name}' (HTTP {status})":
+    'GitHub odmítl udělit uživateli {name} přístup k repozitáři (HTTP {status})',
+  "Could not revoke repository access from '{name}' (HTTP {status}): {detail}":
+    'GitHub odmítl odebrat uživateli {name} přístup k repozitáři (HTTP {status}): {detail}',
+  "Could not revoke repository access from '{name}' (HTTP {status})":
+    'GitHub odmítl odebrat uživateli {name} přístup k repozitáři (HTTP {status})',
   'Could not remove {env} deployment from {target}: {detail}':
     'Nasazení {env} se ze serveru {target} nepodařilo odebrat: {detail}',
   '{detail}; the operation in progress was cancelled': '{detail}; probíhající operace byla zrušena',

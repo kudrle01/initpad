@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { createSign } from 'crypto';
 import { config } from '../../config';
-import { collectScmPages, findInScmPages, scmFetch, scmStatusError } from '../scm-http';
+import {
+  collectScmPages,
+  findInScmPages,
+  readProviderErrorDetail,
+  scmFetch,
+  scmStatusError,
+} from '../scm-http';
 
 function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64url');
@@ -264,6 +270,8 @@ export class GitHubAppService {
         'mint installation token',
         res,
         'Could not mint a GitHub installation token',
+        // Names the permission an installation has not approved yet.
+        await readProviderErrorDetail(res),
       );
     }
     const data = (await res.json()) as { token: string; expires_at: string };
