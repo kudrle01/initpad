@@ -5,6 +5,10 @@ import { API_MESSAGE_RULES, translateApiMessage } from './api-messages';
 // Messages exactly as the API sends them, taken from apps/api/src.
 const REAL_MESSAGES = [
   'Workspace not found',
+  "Could not grant repository access to 'PJjiry' (HTTP 422): Validation Failed - permission is invalid",
+  "Could not revoke repository access from 'PJjiry' (HTTP 404)",
+  'GitHub did not answer in time. Try again in a moment.',
+  'GitHub could not be reached. Try again in a moment.',
   "Project 'cm3x9' not found",
   "Target 'lab-01' not found",
   "Environment 'prod' not found",
@@ -59,6 +63,8 @@ const REAL_MESSAGES = [
 // the catalog must follow.
 const API_SOURCES = [
   "'Workspace not found'",
+  "`Could not grant repository access to '${username}'`",
+  '`${exception.provider} did not answer in time. Try again in a moment.`',
   "`Project '${projectId}' not found`",
   "'Invalid username or password'",
   "`This workspace already has a project named '${dto.name}'`",

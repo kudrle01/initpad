@@ -858,6 +858,21 @@ describe('GitHubScmProvider writes', () => {
     await expect(err.provider.deleteRepo(repository(), actor)).rejects.toThrow('HTTP 500');
   });
 
+  it("reports GitHub's reason when it rejects a collaborator grant", async () => {
+    const fetchMock = jest.fn(async () => ({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        message: 'Validation Failed',
+        errors: [{ code: 'custom', message: 'permission is invalid for this repository' }],
+      }),
+    }));
+    const { provider } = make(fetchMock);
+    await expect(provider.setCollaborator(repository(), 'dev', 'maintainer')).rejects.toThrow(
+      "Could not grant repository access to 'dev' (HTTP 422): Validation Failed - permission is invalid for this repository",
+    );
+  });
+
   it('grants a collaborator the mapped permission and skips the owner', async () => {
     const fetchMock = jest.fn(async () => ({ ok: true, status: 201 }));
     const { provider, installations } = make(fetchMock);

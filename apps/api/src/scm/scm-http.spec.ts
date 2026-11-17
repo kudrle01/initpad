@@ -1,6 +1,7 @@
 import {
   collectScmPages,
   findInScmPages,
+  readProviderErrorDetail,
   ScmHttpStatusError,
   ScmHttpTransportError,
   scmFetch,
@@ -124,5 +125,54 @@ describe('bounded SCM pagination', () => {
         load: async (page) => [page],
       }),
     ).rejects.toThrow('exceeded the pagination limit');
+  });
+
+  describe('provider error detail', () => {
+    const response = (body: unknown) => ({ json: async () => body });
+
+    it("keeps GitHub's validation message and the per-error reasons", async () => {
+      await expect(
+        readProviderErrorDetail(
+          response({
+            message: 'Validation Failed',
+            errors: [{ resource: 'Repository', code: 'custom', message: 'permission is invalid' }],
+            documentation_url: 'https://docs.github.com/rest',
+          }),
+        ),
+      ).resolves.toBe('Validation Failed - permission is invalid');
+    });
+
+    it('drops links and line breaks and bounds the length', async () => {
+      const detail = await readProviderErrorDetail(
+        response({ message: `Rejected\r\nBcc: x see https://evil.example/a?b ${'x'.repeat(400)}` }),
+      );
+      expect(detail).not.toMatch(/[\r\n]|https?:/);
+      expect(detail).toContain('[url]');
+      expect(detail!.length).toBeLessThanOrEqual(200);
+    });
+
+    it('yields nothing for an empty, non-JSON or unreadable body', async () => {
+      await expect(readProviderErrorDetail(response({}))).resolves.toBeUndefined();
+      await expect(
+        readProviderErrorDetail({
+          json: async () => {
+            throw new SyntaxError('Unexpected token');
+          },
+        }),
+      ).resolves.toBeUndefined();
+      await expect(readProviderErrorDetail({ status: 422 })).resolves.toBeUndefined();
+    });
+
+    it('appends the detail to the error message', () => {
+      const error = scmStatusError(
+        'GitHub',
+        'grant collaborator access',
+        { status: 422 },
+        'Denied',
+        'Validation Failed',
+      );
+      expect(error.message).toBe('Denied (HTTP 422): Validation Failed');
+      expect(error.detail).toBe('Validation Failed');
+    });
   });
 });

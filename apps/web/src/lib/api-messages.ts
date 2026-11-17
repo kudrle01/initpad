@@ -203,6 +203,31 @@ export const API_MESSAGE_RULES: readonly Rule[] = [
     String.raw`Could not remove (?<env>\w+) deployment from (?<target>.+?): (?<detail>.+)`,
     msg('Could not remove {env} deployment from {target}: {detail}'),
   ),
+  // An upstream SCM call failed (ScmExceptionFilter); GitHub's own reason stays English.
+  rule(
+    String.raw`(?<provider>GitHub|Gitea) did not answer in time\. Try again in a moment\.`,
+    msg('{provider} did not answer in time. Try again in a moment.'),
+  ),
+  rule(
+    String.raw`(?<provider>GitHub|Gitea) could not be reached\. Try again in a moment\.`,
+    msg('{provider} could not be reached. Try again in a moment.'),
+  ),
+  rule(
+    String.raw`Could not grant repository access to ${NAME} \(HTTP (?<status>\d+)\): (?<detail>.+)`,
+    msg("Could not grant repository access to '{name}' (HTTP {status}): {detail}"),
+  ),
+  rule(
+    String.raw`Could not grant repository access to ${NAME} \(HTTP (?<status>\d+)\)`,
+    msg("Could not grant repository access to '{name}' (HTTP {status})"),
+  ),
+  rule(
+    String.raw`Could not revoke repository access from ${NAME} \(HTTP (?<status>\d+)\): (?<detail>.+)`,
+    msg("Could not revoke repository access from '{name}' (HTTP {status}): {detail}"),
+  ),
+  rule(
+    String.raw`Could not revoke repository access from ${NAME} \(HTTP (?<status>\d+)\)`,
+    msg("Could not revoke repository access from '{name}' (HTTP {status})"),
+  ),
   rule(
     String.raw`(?<detail>.+); the operation in progress was cancelled`,
     msg('{detail}; the operation in progress was cancelled'),

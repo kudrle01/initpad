@@ -44,6 +44,7 @@ import {
   scmFetch,
   ScmRepositoryExistsError,
   scmStatusError,
+  readProviderErrorDetail,
 } from '../scm-http';
 import { adaptWorkflowForGitHub } from './github-workflow';
 import { ReadCache } from './github-read-cache';
@@ -584,6 +585,7 @@ export class GitHubScmProvider implements ScmProvider {
         'grant collaborator access',
         res,
         `Could not grant repository access to '${username}'`,
+        await readProviderErrorDetail(res),
       );
     }
   }
@@ -603,6 +605,7 @@ export class GitHubScmProvider implements ScmProvider {
         'revoke collaborator access',
         res,
         `Could not revoke repository access from '${username}'`,
+        await readProviderErrorDetail(res),
       );
     }
   }
@@ -685,6 +688,7 @@ export class GitHubScmProvider implements ScmProvider {
         'restore collaborator access',
         res,
         `Could not restore repository access for '${username}'`,
+        await readProviderErrorDetail(res),
       );
     }
   }
