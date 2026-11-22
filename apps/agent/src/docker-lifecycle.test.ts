@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import {
   allocationDockerScope,
+  DIRECT_PROXY_IMAGE,
   directPortRangeFromEnv,
+  directProxyImageFromEnv,
   DockerLifecycle,
   healthTimeoutFromEnv,
   legacyWorkloadContainerName,
@@ -18,6 +21,7 @@ import {
 import type { DockerHttpRequest, DockerHttpResponse, DockerTransport } from './docker-http.js';
 
 const IMAGE_REF = `nginx@sha256:${'a'.repeat(64)}`;
+const NO_DRAIN = 0;
 const PAYLOAD = {
   allocationId: '123e4567-e89b-42d3-a456-426614174000',
   namespace: 'team-alpha',
@@ -33,6 +37,23 @@ const PAYLOAD = {
   pidsLimit: 128,
 };
 
+function lifecycleFor(
+  engine: { transport: DockerTransport },
+  options: { range?: { first: number; last: number }; proxyImage?: string } = {},
+) {
+  return new DockerLifecycle(
+    'target-1',
+    'tcp://docker:2375',
+    engine.transport,
+    'docker',
+    async () => new Response('ok', { status: 200 }),
+    1_000,
+    options.range ?? { first: 30_000, last: 32_767 },
+    options.proxyImage ?? DIRECT_PROXY_IMAGE,
+    NO_DRAIN,
+  );
+}
+
 function response(statusCode: number, body: unknown = ''): DockerHttpResponse {
   return {
     statusCode,
@@ -46,11 +67,16 @@ interface FakeContainer {
   name: string;
   Config: { Image: string; Labels: Record<string, string> };
   State: { Running: boolean; ExitCode: number };
-  NetworkSettings: { Ports: Record<string, Array<{ HostPort: string }>> };
+  NetworkSettings: {
+    Ports: Record<string, Array<{ HostIp?: string; HostPort: string }>>;
+    Networks?: Record<string, { Aliases: string[] }>;
+  };
 }
 
 function fakeEngine(initialImagePresent = false) {
   let imagePresent = initialImagePresent;
+  let proxyImagePresent = false;
+  let proxyPullFailure = false;
   let imageLoadFailure: string | null = null;
   let exitOnNextStart = false;
   let failNextRestartPolicyUpdate = false;
@@ -59,6 +85,7 @@ function fakeEngine(initialImagePresent = false) {
   let networkLabels: Record<string, string> = {};
   let nextId = 1;
   const occupiedOutsideDocker = new Set<string>();
+  let conflictingStarts = 0;
   const containers = new Map<string, FakeContainer>();
   const requests: DockerHttpRequest[] = [];
   const createdBodies: Array<Record<string, unknown>> = [];
@@ -70,6 +97,18 @@ function fakeEngine(initialImagePresent = false) {
   const transport: DockerTransport = async (input) => {
     requests.push(input);
     const decodedPath = decodeURIComponent(input.path);
+    if (decodedPath.includes('caddy:')) {
+      if (input.method === 'GET') {
+        return proxyImagePresent
+          ? response(200, { Id: 'sha256:proxy', RepoDigests: [DIRECT_PROXY_IMAGE] })
+          : response(404, { message: 'not found' });
+      }
+      if (input.method === 'POST') {
+        if (proxyPullFailure) return response(500, { message: 'registry unreachable' });
+        proxyImagePresent = true;
+        return response(200, '{"status":"pulled"}\n');
+      }
+    }
     if (input.method === 'GET' && decodedPath.startsWith('/images/')) {
       return imagePresent
         ? response(200, { Id: 'sha256:image', RepoDigests: [IMAGE_REF] })
@@ -116,6 +155,19 @@ function fakeEngine(initialImagePresent = false) {
       networkLabels = (JSON.parse(String(input.body)) as { Labels: Record<string, string> }).Labels;
       return response(201, { Id: 'network-1' });
     }
+    const networkAction = /^\/networks\/([^/]+)\/(connect|disconnect)$/.exec(decodedPath);
+    if (input.method === 'POST' && networkAction) {
+      const body = JSON.parse(String(input.body)) as {
+        Container: string;
+        EndpointConfig?: { Aliases?: string[] };
+      };
+      const container = findContainer(body.Container);
+      if (!container) return response(404, { message: 'no such container' });
+      const networks = (container.NetworkSettings.Networks ??= {});
+      if (networkAction[2] === 'disconnect') delete networks[networkAction[1]];
+      else networks[networkAction[1]] = { Aliases: body.EndpointConfig?.Aliases ?? [] };
+      return response(200);
+    }
     if (input.method === 'DELETE' && decodedPath.startsWith('/networks/')) {
       networkPresent = false;
       return response(204);
@@ -141,10 +193,11 @@ function fakeEngine(initialImagePresent = false) {
       const body = JSON.parse(String(input.body)) as Record<string, unknown>;
       createdBodies.push(body);
       const hostConfig = body.HostConfig as {
-        PortBindings: Record<string, Array<{ HostPort: string }>>;
+        PortBindings: Record<string, Array<{ HostIp: string; HostPort: string }>>;
       };
       const portKey = Object.keys(hostConfig.PortBindings)[0];
       const requestedPort = hostConfig.PortBindings[portKey]?.[0]?.HostPort;
+      const requestedIp = hostConfig.PortBindings[portKey]?.[0]?.HostIp;
       const container: FakeContainer = {
         Id: `container-${nextId++}`,
         name,
@@ -154,7 +207,11 @@ function fakeEngine(initialImagePresent = false) {
         },
         State: { Running: false, ExitCode: 0 },
         NetworkSettings: {
-          Ports: { [portKey]: [{ HostPort: requestedPort || String(32_000 + nextId) }] },
+          Ports: {
+            [portKey]: [
+              { HostIp: requestedIp, HostPort: requestedPort || String(33_000 + nextId) },
+            ],
+          },
         },
       };
       containers.set(container.Id, container);
@@ -169,8 +226,23 @@ function fakeEngine(initialImagePresent = false) {
       if (!container) return response(404, { message: 'not found' });
       if (input.method === 'GET' && action === '/json') return response(200, container);
       if (input.method === 'POST' && action === '/start') {
+        if (conflictingStarts > 0) {
+          conflictingStarts -= 1;
+          return response(500, {
+            message:
+              'driver failed programming external connectivity: failed to bind port 0.0.0.0:42021/tcp: listen tcp4 0.0.0.0:42021: bind: address already in use',
+          });
+        }
         const port = Object.values(container.NetworkSettings.Ports)[0]?.[0]?.HostPort ?? '';
-        if (occupiedOutsideDocker.has(port)) {
+        const taken = [...containers.values()].some(
+          (other) =>
+            other !== container &&
+            other.State.Running &&
+            Object.values(other.NetworkSettings.Ports).some((items) =>
+              items.some((item) => item.HostIp === '0.0.0.0' && item.HostPort === port),
+            ),
+        );
+        if (occupiedOutsideDocker.has(port) || taken) {
           return response(500, {
             message: `driver failed programming external connectivity: Bind for 0.0.0.0:${port} failed: port is already allocated`,
           });
@@ -216,9 +288,16 @@ function fakeEngine(initialImagePresent = false) {
     requests,
     createdBodies,
     imagePresent: () => imagePresent,
+    proxyImagePresent: () => proxyImagePresent,
+    failProxyPull: () => {
+      proxyPullFailure = true;
+    },
     networkPresent: () => networkPresent,
     loadedBytes: () => loadedBytes,
     occupyOutsideDocker: (port: number) => occupiedOutsideDocker.add(String(port)),
+    conflictNextStarts: (count: number) => {
+      conflictingStarts = count;
+    },
     failNextImageLoad: (message = 'no space left on device') => {
       imageLoadFailure = message;
     },
@@ -234,10 +313,10 @@ function fakeEngine(initialImagePresent = false) {
         name,
         Config: { Image: IMAGE_REF, Labels: {} },
         State: { Running: true, ExitCode: 0 },
-        NetworkSettings: { Ports: { '80/tcp': [{ HostPort: '32000' }] } },
+        NetworkSettings: { Ports: { '80/tcp': [{ HostIp: '0.0.0.0', HostPort: '32000' }] } },
       });
     },
-    seedOwned: (name: string, payload: typeof PAYLOAD) => {
+    seedOwned: (name: string, payload: typeof PAYLOAD, hostPort = '32000') => {
       containers.set('owned-legacy-1', {
         Id: 'owned-legacy-1',
         name,
@@ -256,7 +335,7 @@ function fakeEngine(initialImagePresent = false) {
           },
         },
         State: { Running: true, ExitCode: 0 },
-        NetworkSettings: { Ports: { '80/tcp': [{ HostPort: '32000' }] } },
+        NetworkSettings: { Ports: { '80/tcp': [{ HostIp: '0.0.0.0', HostPort: hostPort }] } },
       });
     },
   };
@@ -388,7 +467,9 @@ test('streams and verifies an image archive before publishing an isolated projec
   assert.equal(status.revision, payload.revision);
   assert.deepEqual(progress, [8, 38, 82, 96]);
   assert.deepEqual(engine.loadedBytes(), bytes);
-  assert.equal(engine.containers.size, 1);
+  // The revision and the stable-port proxy of the environment.
+  assert.equal(engine.containers.size, 2);
+  assert.ok(status.hostPort && status.hostPort >= 30_000);
   const created = engine.createdBodies[0];
   assert.deepEqual(created.Env, ['APP_ENV=production', 'DATABASE_PASSWORD=never-log-this']);
   assert.equal(
@@ -500,7 +581,9 @@ test('keeps the previous workload when a replacement exits before health verific
   const replacement = { ...PAYLOAD, revision: 'probe-b' };
 
   await lifecycle.deploy(previous, 'job-previous', new AbortController().signal);
-  const previousContainer = [...engine.containers.values()][0];
+  const previousContainer = [...engine.containers.values()].find(
+    (item) => item.Config.Labels['com.initpad.role'] !== 'proxy',
+  )!;
   engine.exitNextContainerStart();
 
   await assert.rejects(
@@ -508,7 +591,8 @@ test('keeps the previous workload when a replacement exits before health verific
     /Candidate workload failed its health check/,
   );
 
-  assert.equal(engine.containers.size, 1);
+  // The previous revision and its proxy; the failed candidate is gone.
+  assert.equal(engine.containers.size, 2);
   assert.equal(engine.containers.has(previousContainer.Id), true);
   assert.equal(previousContainer.State.Running, true);
   assert.equal(previousContainer.Config.Labels['com.initpad.revision'], previous.revision);
@@ -516,13 +600,7 @@ test('keeps the previous workload when a replacement exits before health verific
 
 test('resumes the same candidate after interruption and finishes with one workload', async () => {
   const engine = fakeEngine(true);
-  const lifecycle = new DockerLifecycle(
-    'target-1',
-    'tcp://docker:2375',
-    engine.transport,
-    'docker',
-    async () => new Response('ok', { status: 200 }),
-  );
+  const lifecycle = lifecycleFor(engine);
   const previous = { ...PAYLOAD, revision: 'probe-a' };
   const replacement = { ...PAYLOAD, revision: 'probe-b' };
 
@@ -533,7 +611,8 @@ test('resumes the same candidate after interruption and finishes with one worklo
     lifecycle.deploy(replacement, 'job-attempt-1', new AbortController().signal),
     /simulated interruption before publication/,
   );
-  assert.equal(engine.containers.size, 2);
+  // Previous revision, its proxy and the interrupted candidate.
+  assert.equal(engine.containers.size, 3);
 
   const recovered = await lifecycle.deploy(
     replacement,
@@ -543,10 +622,13 @@ test('resumes the same candidate after interruption and finishes with one worklo
 
   assert.equal(recovered.state, 'running');
   assert.equal(recovered.revision, replacement.revision);
-  assert.equal(engine.containers.size, 1);
-  assert.equal(engine.createdBodies.length, 2);
+  assert.equal(engine.containers.size, 2);
+  // Revision a, proxy and the candidate that was resumed instead of recreated.
+  assert.equal(engine.createdBodies.length, 3);
   assert.equal(
-    [...engine.containers.values()][0].Config.Labels['com.initpad.revision'],
+    [...engine.containers.values()].find(
+      (item) => item.Config.Labels['com.initpad.role'] !== 'proxy',
+    )!.Config.Labels['com.initpad.revision'],
     replacement.revision,
   );
 });
@@ -620,13 +702,7 @@ test('returns only bounded logs, runtime state, exit code and health for an owne
 
 test('preserves an immutable diagnostic image that was already cached', async () => {
   const engine = fakeEngine(true);
-  const lifecycle = new DockerLifecycle(
-    'target-1',
-    'tcp://docker:2375',
-    engine.transport,
-    'docker',
-    async () => new Response('ok', { status: 200 }),
-  );
+  const lifecycle = lifecycleFor(engine);
 
   await lifecycle.acceptance(PAYLOAD, 'job-2', new AbortController().signal, async () => undefined);
 
@@ -667,18 +743,15 @@ test('migrates an owned legacy direct-port container on the next deployment', as
   const previous = { ...PAYLOAD, revision: 'previous' };
   const desired = { ...PAYLOAD, revision: 'replacement' };
   engine.seedOwned(legacyWorkloadContainerName(previous), previous);
-  const lifecycle = new DockerLifecycle(
-    'target-1',
-    'tcp://docker:2375',
-    engine.transport,
-    'docker',
-    async () => new Response('ok', { status: 200 }),
-  );
+  const lifecycle = lifecycleFor(engine);
 
   await lifecycle.deploy(desired, 'job-replacement', new AbortController().signal);
 
-  assert.equal(engine.containers.size, 1);
-  assert.equal([...engine.containers.values()][0].name, workloadContainerName(desired));
+  const names = [...engine.containers.values()].map((item) => item.name).sort();
+  assert.deepEqual(names, [
+    workloadContainerName(desired),
+    `${workloadContainerName(desired)}-proxy`,
+  ]);
   assert.equal(engine.containers.has('owned-legacy-1'), false);
 });
 
@@ -700,13 +773,7 @@ test('ignores a foreign legacy name while removing the scoped allocation', async
 test('runs the lifecycle suite with isolation, hardening, rollback and cleanup', async () => {
   const engine = fakeEngine();
   const progress: number[] = [];
-  const lifecycle = new DockerLifecycle(
-    'target-1',
-    'tcp://docker:2375',
-    engine.transport,
-    'docker',
-    async () => new Response('ok', { status: 200 }),
-  );
+  const lifecycle = lifecycleFor(engine);
 
   await lifecycle.acceptance(PAYLOAD, 'job-1', new AbortController().signal, async (item) => {
     progress.push(item.percent);
@@ -716,6 +783,8 @@ test('runs the lifecycle suite with isolation, hardening, rollback and cleanup',
   assert.equal(engine.containers.size, 0);
   assert.equal(engine.imagePresent(), false);
   assert.equal(engine.networkPresent(), false);
+  // The shared proxy image is not the workload's to remove.
+  assert.equal(engine.proxyImagePresent(), true);
   assert.ok(engine.requests.some((item) => item.path.includes('/rename?name=')));
   assert.ok(engine.requests.some((item) => item.path.includes('/stop?t=10')));
   assert.ok(engine.requests.some((item) => item.path.includes('/logs?')));
@@ -728,15 +797,10 @@ test('runs the lifecycle suite with isolation, hardening, rollback and cleanup',
   assert.equal(host.Privileged, undefined);
   assert.equal(host.Binds, undefined);
   assert.equal(host.NetworkMode, workloadNetworkName(PAYLOAD));
-  const binding = (host.PortBindings as Record<string, Array<{ HostPort: string }>>)['80/tcp'];
-  const boundPort = Number(binding[0]?.HostPort);
-  assert.ok(boundPort >= 30_000 && boundPort <= 32_767, `explicit host port, got ${boundPort}`);
-  assert.equal(
-    (first.Labels as Record<string, string>)['com.initpad.host-port'],
-    String(boundPort),
-  );
+  // Revisions keep no host-port label; the proxy owns the stable port (ADR-191).
+  assert.equal((first.Labels as Record<string, string>)['com.initpad.host-port'], undefined);
   assert.deepEqual((host.PortBindings as Record<string, unknown>)['80/tcp'], [
-    { HostIp: '0.0.0.0', HostPort: String(boundPort) },
+    { HostIp: '127.0.0.1', HostPort: '' },
   ]);
   assert.deepEqual(host.CapDrop, ['ALL']);
   assert.deepEqual(host.CapAdd, ['CHOWN', 'DAC_OVERRIDE', 'SETGID', 'SETUID', 'NET_BIND_SERVICE']);
@@ -820,17 +884,9 @@ test('full managed project removal deletes every owned revision and its network'
   assert.equal(engine.imagePresent(), false);
 });
 
-test('direct-port gets a stable explicit host port that skips used ports and conflicts', async () => {
+test('the proxy gets a stable explicit host port that skips used ports and conflicts', async () => {
   const engine = fakeEngine(true);
-  const lifecycle = new DockerLifecycle(
-    'target-1',
-    'tcp://docker:2375',
-    engine.transport,
-    'docker',
-    async () => new Response('ok', { status: 200 }),
-    1_000,
-    { first: 40_000, last: 40_002 },
-  );
+  const lifecycle = lifecycleFor(engine, { range: { first: 40_000, last: 40_002 } });
   engine.seedForeign('someone-else');
   engine.containers.get('foreign-1')!.NetworkSettings.Ports['80/tcp'] = [{ HostPort: '40000' }];
   engine.occupyOutsideDocker(40_001);
@@ -839,12 +895,25 @@ test('direct-port gets a stable explicit host port that skips used ports and con
 
   // 40000 is used by a running container, 40001 by a host process: 40002 wins.
   assert.equal(status.hostPort, 40_002);
-  const published = [...engine.containers.values()].find(
-    (item) => item.Config.Labels['com.initpad.revision'] === PAYLOAD.revision,
+  const proxy = [...engine.containers.values()].find(
+    (item) => item.Config.Labels['com.initpad.role'] === 'proxy',
   )!;
-  assert.equal(published.Config.Labels['com.initpad.host-port'], '40002');
-  // The conflicting attempt was cleaned up; only the foreign and the new container remain.
+  assert.equal(proxy.Config.Labels['com.initpad.host-port'], '40002');
+  // The conflicting attempt was cleaned up; the foreign container, revision and proxy remain.
+  assert.equal(engine.containers.size, 3);
+});
+
+test('a candidate whose random health port is taken outside Docker is recreated', async () => {
+  const engine = fakeEngine(true);
+  const lifecycle = lifecycleFor(engine);
+  engine.conflictNextStarts(2);
+
+  const status = await lifecycle.deploy(PAYLOAD, 'job-1', new AbortController().signal);
+
+  assert.equal(status.state, 'running');
+  // Only the published revision and its proxy remain, the failed attempts are gone.
   assert.equal(engine.containers.size, 2);
+  assert.ok([...engine.containers.values()].every((item) => !item.name.includes('-next-')));
 });
 
 test('a candidate health failure names the URL, last status and the log tail', async () => {
@@ -890,13 +959,7 @@ test('reads the health budget and port range from the Agent environment', () => 
 
 test('a direct-port redeploy removes the replaced project image', async () => {
   const engine = fakeEngine(true);
-  const lifecycle = new DockerLifecycle(
-    'target-1',
-    'tcp://docker:2375',
-    engine.transport,
-    'docker',
-    async () => new Response('ok', { status: 200 }),
-  );
+  const lifecycle = lifecycleFor(engine);
   const first = {
     ...PAYLOAD,
     environment: 'dev',
@@ -918,4 +981,210 @@ test('a direct-port redeploy removes the replaced project image', async () => {
     .map((request) => decodeURIComponent(request.path));
   assert.equal(removed.length, 1);
   assert.ok(removed[0].startsWith(`/images/${first.imageRef}?`));
+});
+
+function proxyOf(engine: ReturnType<typeof fakeEngine>) {
+  return [...engine.containers.values()].find(
+    (item) => item.Config.Labels['com.initpad.role'] === 'proxy',
+  );
+}
+
+test('the proxy image pin equals the gateway image pin in install.sh', () => {
+  const install = readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
+  const match = /^CADDY_IMAGE='([^']+)'$/m.exec(install);
+  assert.ok(match, 'install.sh defines CADDY_IMAGE');
+  assert.equal(DIRECT_PROXY_IMAGE, match[1]);
+  assert.equal(directProxyImageFromEnv(undefined), DIRECT_PROXY_IMAGE);
+  assert.equal(
+    directProxyImageFromEnv(`registry.test/mirror/caddy@sha256:${'b'.repeat(64)}`),
+    `registry.test/mirror/caddy@sha256:${'b'.repeat(64)}`,
+  );
+  assert.throws(() => directProxyImageFromEnv('caddy:2-alpine'), /pinned by a sha256 digest/);
+});
+
+test('a first direct deploy creates a hardened proxy on an allocated port', async () => {
+  const engine = fakeEngine(true);
+  const lifecycle = lifecycleFor(engine);
+
+  const status = await lifecycle.deploy(PAYLOAD, 'job-1', new AbortController().signal);
+
+  const proxy = proxyOf(engine)!;
+  assert.ok(proxy.State.Running);
+  assert.equal(proxy.name, `${workloadContainerName(PAYLOAD)}-proxy`);
+  const port = Number(proxy.Config.Labels['com.initpad.host-port']);
+  assert.ok(port >= 30_000 && port <= 32_767);
+  assert.equal(status.hostPort, port);
+  assert.equal(proxy.Config.Labels['com.initpad.proxy-upstream'], 'initpad-active:80');
+  // The revision answers under the short alias, its long name is never resolved.
+  const revision = [...engine.containers.values()].find(
+    (item) => item.name === workloadContainerName(PAYLOAD),
+  )!;
+  assert.deepEqual(revision.NetworkSettings.Networks?.[workloadNetworkName(PAYLOAD)], {
+    Aliases: ['initpad-active'],
+  });
+  const [candidateBody, proxyBody] = engine.createdBodies;
+  const revisionHost = candidateBody.HostConfig as Record<string, unknown>;
+  assert.deepEqual((revisionHost.PortBindings as Record<string, unknown>)['80/tcp'], [
+    { HostIp: '127.0.0.1', HostPort: '' },
+  ]);
+  assert.equal(
+    (candidateBody.Labels as Record<string, string>)['com.initpad.host-port'],
+    undefined,
+  );
+  const host = proxyBody.HostConfig as Record<string, unknown>;
+  assert.equal(proxyBody.Image, DIRECT_PROXY_IMAGE);
+  assert.deepEqual(proxyBody.Entrypoint, ['/bin/sh', '-ec']);
+  assert.match(String((proxyBody.Cmd as string[])[0]), /dynamic a[\s\S]*exec caddy run/);
+  assert.deepEqual(proxyBody.Env, ['UPSTREAM_HOST=initpad-active', 'UPSTREAM_PORT=80']);
+  assert.equal(host.NetworkMode, workloadNetworkName(PAYLOAD));
+  assert.deepEqual((host.PortBindings as Record<string, unknown>)['8080/tcp'], [
+    { HostIp: '0.0.0.0', HostPort: String(port) },
+  ]);
+  assert.equal(host.ReadonlyRootfs, true);
+  assert.deepEqual(Object.keys(host.Tmpfs as object).sort(), ['/config', '/data', '/tmp']);
+  assert.deepEqual(host.CapDrop, ['ALL']);
+  assert.deepEqual(host.CapAdd, ['NET_BIND_SERVICE']);
+  assert.deepEqual(host.SecurityOpt, ['no-new-privileges']);
+  assert.deepEqual(host.RestartPolicy, { Name: 'unless-stopped' });
+  assert.equal(host.Memory, 64 * 1024 * 1024);
+  assert.equal(host.NanoCpus, 250_000_000);
+  assert.equal(host.PidsLimit, 64);
+});
+
+test('a direct redeploy keeps the proxy and port and retires the previous revision', async () => {
+  const engine = fakeEngine(true);
+  const lifecycle = lifecycleFor(engine);
+  const first = { ...PAYLOAD, revision: 'rev-a' };
+  const second = { ...PAYLOAD, revision: 'rev-b' };
+
+  const firstStatus = await lifecycle.deploy(first, 'job-a', new AbortController().signal);
+  const proxyId = proxyOf(engine)!.Id;
+  const secondStatus = await lifecycle.deploy(second, 'job-b', new AbortController().signal);
+
+  assert.equal(secondStatus.hostPort, firstStatus.hostPort);
+  assert.equal(proxyOf(engine)!.Id, proxyId);
+  assert.equal(engine.containers.size, 2);
+  assert.equal(secondStatus.revision, 'rev-b');
+  assert.ok(engine.requests.some((item) => item.path.includes('-retiring-rev-a')));
+  assert.ok(engine.requests.some((item) => item.path.includes('/stop?t=10')));
+  assert.ok([...engine.containers.values()].every((item) => !item.name.includes('-retiring-')));
+  // Same revision again is a no-op for the revision and keeps the proxy.
+  const again = await lifecycle.deploy(second, 'job-b2', new AbortController().signal);
+  assert.equal(again.hostPort, firstStatus.hostPort);
+  assert.equal(engine.containers.size, 2);
+});
+
+test('migrating a legacy direct container reuses its public port for the proxy', async () => {
+  const engine = fakeEngine(true);
+  const previous = { ...PAYLOAD, revision: 'previous' };
+  const desired = { ...PAYLOAD, revision: 'replacement' };
+  engine.seedOwned(legacyWorkloadContainerName(previous), previous, '31234');
+  engine.containers.get('owned-legacy-1')!.Config.Labels['com.initpad.host-port'] = '31234';
+  const lifecycle = lifecycleFor(engine);
+
+  const status = await lifecycle.deploy(desired, 'job-new', new AbortController().signal);
+
+  assert.equal(status.hostPort, 31_234);
+  assert.equal(engine.containers.has('owned-legacy-1'), false);
+  assert.equal(proxyOf(engine)!.Config.Labels['com.initpad.host-port'], '31234');
+  assert.ok(proxyOf(engine)!.State.Running);
+});
+
+test('a legacy direct container reports its own port and is left alone by a no-op deploy', async () => {
+  const engine = fakeEngine(true);
+  engine.seedOwned(workloadContainerName(PAYLOAD), PAYLOAD, '31500');
+  const lifecycle = lifecycleFor(engine);
+
+  const status = await lifecycle.deploy(PAYLOAD, 'job-noop', new AbortController().signal);
+  assert.equal(status.hostPort, 31_500);
+  assert.equal(proxyOf(engine), undefined);
+  assert.equal(engine.containers.has('owned-legacy-1'), true);
+});
+
+test('a changed container port recreates the proxy on the same host port', async () => {
+  const engine = fakeEngine(true);
+  const lifecycle = lifecycleFor(engine);
+  const first = { ...PAYLOAD, revision: 'rev-a' };
+  const second = { ...PAYLOAD, revision: 'rev-b', containerPort: 3000 };
+
+  const firstStatus = await lifecycle.deploy(first, 'job-a', new AbortController().signal);
+  const oldProxyId = proxyOf(engine)!.Id;
+  const secondStatus = await lifecycle.deploy(second, 'job-b', new AbortController().signal);
+
+  const proxy = proxyOf(engine)!;
+  assert.notEqual(proxy.Id, oldProxyId);
+  assert.equal(secondStatus.hostPort, firstStatus.hostPort);
+  assert.equal(proxy.Config.Labels['com.initpad.host-port'], String(firstStatus.hostPort));
+  assert.equal(proxy.Config.Labels['com.initpad.proxy-upstream'], 'initpad-active:3000');
+  assert.equal(engine.containers.size, 2);
+});
+
+test('stop, start and remove handle the proxy and keep the port while stopped', async () => {
+  const engine = fakeEngine(true);
+  const lifecycle = lifecycleFor(engine);
+  const signal = new AbortController().signal;
+  const deployed = await lifecycle.deploy(PAYLOAD, 'job-1', signal);
+
+  await lifecycle.stop(PAYLOAD, signal);
+  assert.ok([...engine.containers.values()].every((item) => !item.State.Running));
+  const stopped = await lifecycle.status(PAYLOAD, signal);
+  assert.equal(stopped.state, 'stopped');
+  assert.equal(stopped.hostPort, deployed.hostPort);
+
+  await lifecycle.start(PAYLOAD, signal);
+  assert.ok([...engine.containers.values()].every((item) => item.State.Running));
+  assert.equal((await lifecycle.status(PAYLOAD, signal)).hostPort, deployed.hostPort);
+
+  await lifecycle.removeProject(PAYLOAD, signal);
+  assert.equal(engine.containers.size, 0);
+  assert.equal(engine.networkPresent(), false);
+});
+
+test('a revision behind the proxy with a public health bind is not treated as legacy', async () => {
+  const previous = process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND;
+  process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND = '0.0.0.0';
+  try {
+    const engine = fakeEngine(true);
+    const lifecycle = lifecycleFor(engine);
+    const signal = new AbortController().signal;
+    const deployed = await lifecycle.deploy(PAYLOAD, 'job-1', signal);
+    const proxy = proxyOf(engine)!;
+    engine.containers.delete(proxy.Id);
+
+    await lifecycle.stop(PAYLOAD, signal);
+    await lifecycle.start(PAYLOAD, signal);
+
+    assert.ok(proxyOf(engine), 'start must recreate the missing proxy');
+    assert.equal((await lifecycle.status(PAYLOAD, signal)).hostPort, deployed.hostPort);
+  } finally {
+    if (previous === undefined) delete process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND;
+    else process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND = previous;
+  }
+});
+
+test('removal also deletes retiring leftovers of an interrupted switch', async () => {
+  const engine = fakeEngine(true);
+  const lifecycle = lifecycleFor(engine);
+  const signal = new AbortController().signal;
+  const previous = { ...PAYLOAD, revision: 'rev-a' };
+  await lifecycle.deploy(previous, 'job-a', signal);
+  engine.seedOwned(`${workloadContainerName(PAYLOAD)}-retiring-rev-z`, previous, '31999');
+
+  await lifecycle.remove(PAYLOAD, signal);
+
+  assert.equal(engine.containers.size, 0);
+});
+
+test('a failed proxy pull leaves no candidate or container behind', async () => {
+  const engine = fakeEngine(true);
+  engine.failProxyPull();
+  const lifecycle = lifecycleFor(engine);
+
+  await assert.rejects(
+    lifecycle.deploy(PAYLOAD, 'job-1', new AbortController().signal),
+    /Cannot pull the stable-port proxy image/,
+  );
+  assert.equal(engine.containers.size, 0);
+  assert.equal(engine.createdBodies.length, 0);
+  assert.equal(engine.networkPresent(), false);
 });

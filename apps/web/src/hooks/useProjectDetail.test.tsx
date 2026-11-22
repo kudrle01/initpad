@@ -4,6 +4,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api';
 import type { ProductionDeploymentRequest, Project } from '@/types';
+import { IDLE_PROJECT_POLL_MS } from '@/lib/commit-polling';
 import { useProjectDetail } from './useProjectDetail';
 
 const mocks = vi.hoisted(() => ({
@@ -108,6 +109,63 @@ describe('useProjectDetail', () => {
     vi.clearAllMocks();
     mocks.params = { id: 'project-1' };
     arrangeSuccessfulLoad();
+  });
+
+  describe('idle polling', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    function setVisibility(state: 'visible' | 'hidden') {
+      vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(state);
+    }
+
+    it('polls an idle page every few seconds, not every 30 s', () => {
+      expect(IDLE_PROJECT_POLL_MS).toBeLessThanOrEqual(5_000);
+    });
+
+    it('polls while visible with one timer, and not while hidden', async () => {
+      vi.useFakeTimers();
+      const { result } = renderHook(() => useProjectDetail());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.loading).toBe(false);
+      const before = mocks.api.getProject.mock.calls.length;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(IDLE_PROJECT_POLL_MS);
+      });
+      expect(mocks.api.getProject.mock.calls.length).toBe(before + 1);
+
+      setVisibility('hidden');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(IDLE_PROJECT_POLL_MS * 3);
+      });
+      expect(mocks.api.getProject.mock.calls.length).toBe(before + 1);
+    });
+
+    it('refetches at once when the tab becomes visible or the window gains focus', async () => {
+      vi.useFakeTimers();
+      renderHook(() => useProjectDetail());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      const before = mocks.api.getProject.mock.calls.length;
+
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(mocks.api.getProject.mock.calls.length).toBe(before + 1);
+
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(mocks.api.getProject.mock.calls.length).toBe(before + 2);
+    });
   });
 
   it('fetches templates once per template id, not on every poll', async () => {

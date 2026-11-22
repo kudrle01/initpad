@@ -1535,6 +1535,13 @@ jen konkrétní provozní a vyhodnocovací scénář.
    **Zbývá:** živá acceptance na samostatném hostu (platforma i Agent 0.17),
    rozdělení největších souborů a major
    upgrady Prisma/Nest/React.
+   Z uživatelského testu 0.2.47 jsou nálezy N1 až N4 opravené v kódu, ale
+   zatím nevydané: adresa prostředí je trvale podtržená jako odkaz, detail
+   projektu se v klidu obnovuje každých 5 s (skrytý panel nedotazuje a návrat
+   na panel nebo do okna obnoví data hned) a potvrzení schválení produkce už
+   není červené, červená zůstává jen u zamítnutí a mazání. Prostředí s přímými
+   porty drží stálý port v proxy kontejneru (ADR-191), nasazení v lokálním labu
+   proběhlo beze změny adresy a bez výpadku. Vyžaduje release Agenta 0.18.
    **Uživatelský test:** na čistém stroji `./install.sh --local`, vytvořit
    admina, projekt a během minut otevřít dev URL bez úpravy `.env`.
 

@@ -478,13 +478,30 @@ jsou omezeny na posledních 32 KiB.
 
 ### Hostitelský port a health check kandidáta (Agent 0.17)
 
-Workload v režimu přímých portů dostane konkrétní hostitelský port z rozsahu
-`INITPAD_AGENT_DIRECT_PORT_RANGE` (výchozí `30000-32767`). Port se uloží do
-konfigurace kontejneru i do labelu `com.initpad.host-port`, takže po restartu
-kontejneru nebo celého serveru zůstane stejný a adresa v InitPadu platí dál
-(ADR-180). Pokud rozsah otevíráte ve firewallu, stačí tento rozsah. Při
-redeployi Agent smaže image nahrazené revize. Image, které ještě používá jiné
-prostředí, Docker smazat nedovolí a zůstane.
+Workload v režimu přímých portů má stálou adresu, kterou drží malý proxy
+kontejner `<jméno workloadu>-proxy` v síti prostředí (ADR-191, mění ADR-180).
+Proxy dostane konkrétní hostitelský port z rozsahu
+`INITPAD_AGENT_DIRECT_PORT_RANGE` (výchozí `30000-32767`), uloží ho do labelu
+`com.initpad.host-port` a předává provoz na aktivní revizi přes její alias `initpad-active` v síti
+prostředí. Port proto
+zůstane stejný po nasazení, rollbacku i restartu kontejneru nebo serveru. Pokud
+rozsah otevíráte ve firewallu, stačí tento rozsah. Revize publikují jen náhodný
+port na `127.0.0.1` pro health check. Agent se vzdáleným Docker daemonem
+proto potřebuje `INITPAD_AGENT_MANAGED_HEALTH_BIND=0.0.0.0` stejně jako ve
+spravované bráně. Při nasazení se stará revize přejmenuje,
+zdravý kandidát převezme jméno workloadu a po dvou sekundách se stará revize
+zastaví a smaže bez výpadku. Agent smaže i image nahrazené revize. Image, které
+ještě používá jiné prostředí, Docker smazat nedovolí a zůstane.
+
+Proxy používá Caddy v obrazu připnutém digestem, stejném jako brána z
+`install.sh`. Má read-only souborový systém, jen capability `NET_BIND_SERVICE`,
+`no-new-privileges` a limity 64 MiB, 0,25 CPU a 64 procesů. Server bez přístupu
+k Docker Hubu potřebuje obraz nahrát předem, nebo nastavit
+`INITPAD_AGENT_DIRECT_PROXY_IMAGE` na kopii připnutou digestem v dostupném
+registru. Neplatná hodnota Agent odmítne při startu práce. Prostředí z Agenta
+0.17 a starších se převede při prvním nasazení: proxy převezme jeho port po
+krátkém výpadku mezi smazáním staré revize a startem proxy. Změní-li se port
+aplikace v kontejneru, proxy se na stejném portu vytvoří znovu.
 
 Kandidát má na první úspěšnou odpověď health cesty 60 s od prvního pokusu.
 Pomalejší frameworky mohou čas prodloužit proměnnou
