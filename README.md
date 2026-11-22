@@ -23,7 +23,7 @@ srozumitelném a samostatně nasaditelném systému.
 
 | Část                  | Stav                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.48` (stabilní adresa aplikace za proxy kontejnerem s Agentem 0.18, vypnuté Actions v zrcadlech CI akcí, drobné opravy webu z uživatelského testu; prošel anonymním auditem, živá acceptance zatím neproběhla); živou candidate acceptance aktualizace tlačítkem **Install update** z `0.2.35` prošly v lokálním Dockeru `0.2.36` (zachování dat a workloadů, health-gated rollback) i `0.2.37` (vestavěný Docker funguje po aktualizaci bez úpravy `.env`); recovery bootstrap z `0.2.9` byl ověřen na `0.2.10` |
+| Self-hosted platforma | Nejnovější veřejný podepsaný release `0.2.49` (stabilní adresa aplikace za proxy kontejnerem s Agentem 0.18, vypnuté Actions v zrcadlech CI akcí, drobné opravy webu z uživatelského testu včetně nepřeříznutého podtržení adresy prostředí; prošel anonymním auditem, živá acceptance zatím neproběhla); živou candidate acceptance aktualizace tlačítkem **Install update** z `0.2.35` prošly v lokálním Dockeru `0.2.36` (zachování dat a workloadů, health-gated rollback) i `0.2.37` (vestavěný Docker funguje po aktualizaci bez úpravy `.env`); recovery bootstrap z `0.2.9` byl ověřen na `0.2.10` |
 | InitPad Agent         | Doporučený release `0.18.0` (stabilní adresa aplikace za proxy kontejnerem, odolná fronta jobů, brána přežije přeinstalaci); ověřen lokálně v Docker labu a anonymním auditem, živá acceptance na hostu zatím neproběhla. Reboot, migrace control-plane URL i bezpečný rollback ověřeny na samostatném Linux hostu u `0.14.3`                                                                                                                                                                                                                                      |
 | Hosted SaaS           | Ve vývoji; nejde zatím o produkční deployment profil                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
@@ -70,7 +70,7 @@ spusťte `sudo ./prepare-rootless-runner.sh` (instalátor na to upozorní).
 Instalujte z posledního podepsaného releasu:
 
 ```bash
-git clone --branch initpad-v0.2.48 https://github.com/kudrle01/initpad.git initpad
+git clone --branch initpad-v0.2.49 https://github.com/kudrle01/initpad.git initpad
 cd initpad/deploy
 ./install.sh
 ```
@@ -150,7 +150,7 @@ vyžaduje přístup k internetu; CI ho spouští na `main` a každou noc.
 Anonymní distribuční hranici vydané platformy lze zopakovat příkazem:
 
 ```bash
-npm run audit:public-release -- --tag initpad-v0.2.48
+npm run audit:public-release -- --tag initpad-v0.2.49
 npm run audit:public-release -- --tag agent-v0.18.0
 ```
 
