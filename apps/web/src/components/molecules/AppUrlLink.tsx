@@ -11,9 +11,16 @@ export function AppUrlLink({ url, className }: { url: string | null; className?:
       target="_blank"
       rel="noreferrer"
       title={href}
-      className={cn('text-link flex min-w-0 items-center gap-1.5 underline', className)}
+      // The address is the way into the running application, so it is larger
+      // and bolder than the surrounding card text and always underlined. The
+      // text is truncated with overflow hidden, so the underline offset has to
+      // stay small enough to fit inside the line box.
+      className={cn(
+        'text-link flex min-w-0 items-center gap-1.5 text-sm font-semibold underline underline-offset-2',
+        className,
+      )}
     >
-      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+      <ExternalLink className="h-4 w-4 shrink-0" />
       <span className="truncate">{href.replace(/^https?:\/\//, '')}</span>
     </a>
   );
