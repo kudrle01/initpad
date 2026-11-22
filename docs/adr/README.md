@@ -202,3 +202,4 @@ stabilní.
 | [ADR-188](./ADR-188.md) | Accepted | Registrace e-mailem v SaaS a pozvánky do workspace se souhlasem |
 | [ADR-189](./ADR-189.md) | Accepted | Týmový workspace se připojuje ke GitHub organizaci a zve do ní členy |
 | [ADR-190](./ADR-190.md) | Accepted | Zrcadla CI akcí mají vypnuté Actions |
+| [ADR-191](./ADR-191.md) | Accepted | Prostředí s přímými porty má stálý port v proxy kontejneru |

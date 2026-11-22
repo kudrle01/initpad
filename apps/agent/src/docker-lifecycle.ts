@@ -18,6 +18,48 @@ const DEFAULT_DIRECT_PORT_RANGE = { first: 30_000, last: 32_767 };
 const HOST_PORT_LABEL = 'com.initpad.host-port';
 const PORT_CONFLICT = /port is already allocated|address already in use|bind for .* failed/i;
 const MAX_PORT_ATTEMPTS = 5;
+const ROLE_LABEL = 'com.initpad.role';
+const PROXY_UPSTREAM_LABEL = 'com.initpad.proxy-upstream';
+// Marks a direct-port revision that sits behind the proxy. Its health port
+// may be public when INITPAD_AGENT_MANAGED_HEALTH_BIND is 0.0.0.0, so the
+// binding alone cannot tell it from a revision of an older Agent.
+const BEHIND_PROXY_LABEL = 'com.initpad.behind-proxy';
+// The proxy resolves this alias of the active revision in the per-environment
+// network. Container names can exceed the 63-character DNS label limit, so the
+// proxy never resolves them directly (ADR-191).
+const ACTIVE_ALIAS = 'initpad-active';
+const PROXY_CONTAINER_PORT = 8080;
+const DEFAULT_DRAIN_MS = 2_000;
+const PROXY_IMAGE_PATTERN = /^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$/;
+/**
+ * Caddy image of the stable-port proxy (ADR-191). It must stay identical to
+ * `CADDY_IMAGE` in `install.sh`; a test enforces that.
+ */
+export const DIRECT_PROXY_IMAGE =
+  'caddy:2.11-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f';
+// Both values arrive as env vars so the Caddyfile never embeds untrusted text.
+const PROXY_SCRIPT = [
+  'cat > /tmp/Caddyfile <<EOF',
+  '{',
+  '\tadmin off',
+  '\tauto_https off',
+  '\tpersist_config off',
+  '}',
+  ':8080 {',
+  '\treverse_proxy {',
+  '\t\tdynamic a {',
+  '\t\t\tname $UPSTREAM_HOST',
+  '\t\t\tport $UPSTREAM_PORT',
+  '\t\t\trefresh 1s',
+  '\t\t}',
+  '\t\tlb_try_duration 10s',
+  '\t\tlb_try_interval 250ms',
+  '\t\tfail_duration 1s',
+  '\t}',
+  '}',
+  'EOF',
+  'exec caddy run --config /tmp/Caddyfile --adapter caddyfile',
+].join('\n');
 const SAFE_RUNTIME_CAPABILITIES = [
   'CHOWN',
   'DAC_OVERRIDE',
@@ -122,6 +164,7 @@ interface ContainerInspect {
   State?: { Running?: boolean; ExitCode?: number };
   NetworkSettings?: {
     Ports?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+    Networks?: Record<string, { Aliases?: string[] | null } | null>;
   };
 }
 
@@ -426,6 +469,20 @@ export function directPortRangeFromEnv(value = process.env.INITPAD_AGENT_DIRECT_
   return { first, last };
 }
 
+/** Proxy image of direct-port environments, `INITPAD_AGENT_DIRECT_PROXY_IMAGE` overrides it. */
+export function directProxyImageFromEnv(
+  value = process.env.INITPAD_AGENT_DIRECT_PROXY_IMAGE,
+): string {
+  const configured = value?.trim();
+  if (!configured) return DIRECT_PROXY_IMAGE;
+  if (!PROXY_IMAGE_PATTERN.test(configured)) {
+    throw new Error(
+      'INITPAD_AGENT_DIRECT_PROXY_IMAGE must be an image reference pinned by a sha256 digest',
+    );
+  }
+  return configured;
+}
+
 interface HealthProbe {
   ok: boolean;
   url?: string;
@@ -486,6 +543,8 @@ export class DockerLifecycle {
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly healthTimeoutMs = healthTimeoutFromEnv(),
     private readonly directPortRange = directPortRangeFromEnv(),
+    private readonly proxyImage = directProxyImageFromEnv(),
+    private readonly drainMs = DEFAULT_DRAIN_MS,
   ) {
     this.host = host ?? publishedHost(dockerHost);
   }
@@ -673,12 +732,31 @@ export class DockerLifecycle {
         ? await this.desiredManagedContainer(desired, signal)
         : await this.desiredDirectContainer(desired, signal);
     if (current && this.matches(current, desired)) {
-      if (!current.State?.Running) await this.start(desired, signal);
+      if (!current.State?.Running) {
+        await this.expect(
+          [204, 304],
+          {
+            method: 'POST',
+            path: `/containers/${encodeURIComponent(current.Id)}/start`,
+            signal,
+          },
+          'start container',
+        );
+      }
       if (!(await this.healthy(desired, signal)))
         throw new Error('Existing workload failed its health check');
+      if (desired.routingMode === 'direct-port' && !this.isLegacyDirect(current)) {
+        await this.activateRevision(current.Id, desired, signal);
+        await this.ensureProxyAfterSwitch(desired, jobId, null, signal);
+        await this.retireLeftovers(desired, signal);
+      }
       return this.status(desired, signal);
     }
 
+    if (desired.routingMode === 'direct-port') {
+      // Pull before anything is created so a failed pull leaves nothing behind.
+      await this.ensureProxyImage(signal);
+    }
     await this.ensureNetwork(desired, signal);
     for (const legacyCandidateName of this.legacyCandidateNames(desired)) {
       const legacyCandidate = await this.legacyOwnedContainer(legacyCandidateName, desired, signal);
@@ -732,19 +810,59 @@ export class DockerLifecycle {
       },
       'set durable restart policy',
     );
-    if (current) await this.removeContainer(current.Id, signal);
-    await this.expect(
-      [204],
-      {
-        method: 'POST',
-        path: `/containers/${encodeURIComponent(candidate.Id)}/rename?name=${encodeURIComponent(baseName)}`,
-        signal,
-      },
-      'publish candidate',
-    );
+    if (desired.routingMode === 'managed-gateway') {
+      if (current) await this.removeContainer(current.Id, signal);
+      await this.publishCandidate(candidate.Id, baseName, signal);
+      return this.status(desired, signal);
+    }
+
+    // Direct-port switch (ADR-191). The proxy holds the stable host port and
+    // resolves the base name, so the switch is two renames. Failure rules:
+    // - before the candidate owns the base name, the old revision is put back;
+    // - once the candidate owns it, it is never deleted. If the proxy cannot
+    //   be ensured the job fails with a clear error and the retiring revision
+    //   stays untouched; the retiring revision is removed only when the proxy
+    //   is up, here or on the next deploy of the same revision.
+    let retiring: ContainerInspect | null = null;
+    if (current) {
+      const retiringName = this.retiringName(
+        desired,
+        current.Config?.Labels?.['com.initpad.revision'],
+      );
+      const stale = await this.legacyOwnedContainer(retiringName, desired, signal);
+      if (stale && stale.Id !== current.Id) await this.removeContainer(stale.Id, signal);
+      await this.renameContainer(current.Id, retiringName, 'retire previous revision', signal);
+      retiring = current;
+    }
+    try {
+      await this.publishCandidate(candidate.Id, baseName, signal);
+    } catch (error) {
+      if (retiring) {
+        await this.renameContainer(
+          retiring.Id,
+          baseName,
+          'restore previous revision',
+          signal,
+        ).catch(() => undefined);
+      }
+      throw error;
+    }
+    const legacyPrevious = retiring && this.isLegacyDirect(retiring) ? retiring : null;
+    try {
+      await this.activateRevision(candidate.Id, desired, signal);
+      await this.ensureProxyAfterSwitch(desired, jobId, legacyPrevious, signal);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Revision ${desired.revision} is running but the stable-port proxy failed: ${detail}`,
+        { cause: error },
+      );
+    }
+    if (retiring && !legacyPrevious)
+      await sleep(this.drainMs, undefined, { signal }).catch(() => undefined);
+    await this.retireLeftovers(desired, signal);
     const replacedImage = current?.Config?.Image;
     if (
-      desired.routingMode === 'direct-port' &&
       replacedImage &&
       replacedImage !== desired.imageRef &&
       PROJECT_IMAGE_REF_PATTERN.test(replacedImage)
@@ -755,6 +873,31 @@ export class DockerLifecycle {
       await this.removeImage(replacedImage, signal).catch(() => undefined);
     }
     return this.status(desired, signal);
+  }
+
+  private async publishCandidate(
+    candidateId: string,
+    baseName: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    await this.renameContainer(candidateId, baseName, 'publish candidate', signal);
+  }
+
+  private async renameContainer(
+    id: string,
+    name: string,
+    action: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    await this.expect(
+      [204],
+      {
+        method: 'POST',
+        path: `/containers/${encodeURIComponent(id)}/rename?name=${encodeURIComponent(name)}`,
+        signal,
+      },
+      action,
+    );
   }
 
   private async createCandidate(
@@ -768,14 +911,11 @@ export class DockerLifecycle {
     const memoryMb = desired.memoryLimitMb!;
     const cpu = desired.cpuLimitMillicores! / 1_000;
     const pids = desired.pidsLimit!;
-    const tried = new Set<number>();
+    // Revisions publish only a loopback port for the health check, in both
+    // routing modes. The stable direct-port address belongs to the proxy
+    // container (ADR-191). Docker picks the port but cannot see listeners
+    // outside Docker, so a bind conflict is retried with a fresh container.
     for (let attempt = 1; ; attempt += 1) {
-      // Direct-port workloads get an explicit host port: Docker re-randomizes
-      // an empty HostPort on every container or host restart (ADR-180).
-      const hostPort =
-        desired.routingMode === 'direct-port'
-          ? await this.allocateDirectPort(desired, tried, signal)
-          : null;
       const created = responseJson<{ Id: string }>(
         await this.request({
           method: 'POST',
@@ -785,7 +925,7 @@ export class DockerLifecycle {
             Image: desired.imageRef,
             Labels: {
               ...this.labels(desired, jobId),
-              ...(hostPort ? { [HOST_PORT_LABEL]: String(hostPort) } : {}),
+              ...(desired.routingMode === 'direct-port' ? { [BEHIND_PROXY_LABEL]: 'true' } : {}),
             },
             ...(Object.keys(envVars).length
               ? { Env: Object.entries(envVars).map(([key, value]) => `${key}=${value}`) }
@@ -796,11 +936,8 @@ export class DockerLifecycle {
               PortBindings: {
                 [portKey]: [
                   {
-                    HostIp:
-                      desired.routingMode === 'managed-gateway'
-                        ? process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND?.trim() || '127.0.0.1'
-                        : '0.0.0.0',
-                    HostPort: hostPort ? String(hostPort) : '',
+                    HostIp: process.env.INITPAD_AGENT_MANAGED_HEALTH_BIND?.trim() || '127.0.0.1',
+                    HostPort: '',
                   },
                 ],
               },
@@ -834,9 +971,7 @@ export class DockerLifecycle {
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : '';
-        if (hostPort && attempt < MAX_PORT_ATTEMPTS && PORT_CONFLICT.test(message)) {
-          // A process outside Docker holds the port; try the next free one.
-          tried.add(hostPort);
+        if (attempt < MAX_PORT_ATTEMPTS && PORT_CONFLICT.test(message)) {
           await this.removeContainer(created.Id, signal);
           continue;
         }
@@ -844,6 +979,267 @@ export class DockerLifecycle {
       }
       return this.inspectContainer(created.Id, signal);
     }
+  }
+
+  /**
+   * Gives the revision the network alias the proxy resolves. Docker sets
+   * aliases only when a container joins a network, so the revision is
+   * reconnected; the old revision keeps answering under the same alias until
+   * it is retired (ADR-191).
+   */
+  private async activateRevision(
+    id: string,
+    desired: DockerLifecyclePayload,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const network = this.networkName(desired);
+    const container = await this.inspectContainer(id, signal);
+    if (container?.NetworkSettings?.Networks?.[network]?.Aliases?.includes(ACTIVE_ALIAS)) return;
+    const path = `/networks/${encodeURIComponent(network)}`;
+    const headers = { 'content-type': 'application/json' };
+    await this.expect(
+      [200],
+      {
+        method: 'POST',
+        path: `${path}/disconnect`,
+        headers,
+        body: JSON.stringify({ Container: id, Force: true }),
+        signal,
+      },
+      'disconnect revision before activation',
+    );
+    await this.expect(
+      [200],
+      {
+        method: 'POST',
+        path: `${path}/connect`,
+        headers,
+        body: JSON.stringify({ Container: id, EndpointConfig: { Aliases: [ACTIVE_ALIAS] } }),
+        signal,
+      },
+      'activate revision',
+    );
+  }
+
+  private async ensureProxyImage(signal: AbortSignal): Promise<void> {
+    if (await this.imageMatches(this.proxyImage, signal)) return;
+    const response = await this.request({
+      method: 'POST',
+      path: `/images/create?fromImage=${encodeURIComponent(this.proxyImage)}`,
+      maxResponseBytes: 4 * 1024 * 1024,
+      timeoutMs: 120_000,
+      signal,
+    });
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw new Error(
+        `Cannot pull the stable-port proxy image ${this.proxyImage} (set INITPAD_AGENT_DIRECT_PROXY_IMAGE to a reachable copy or load it in advance): ${
+          dockerError(response, 'pull proxy image').message
+        }`,
+      );
+    }
+    if (!(await this.imageMatches(this.proxyImage, signal))) {
+      throw new Error('Docker pulled a proxy image that does not expose the requested RepoDigest');
+    }
+  }
+
+  /**
+   * Makes sure the proxy of a direct-port workload exists, runs the pinned
+   * image, targets the active revision and keeps its host port (ADR-191).
+   * `legacyPrevious` is a revision from an older Agent that still owns a
+   * public port; it is removed first so the proxy can take over its address.
+   */
+  private async ensureProxyAfterSwitch(
+    desired: DockerLifecyclePayload,
+    jobId: string,
+    legacyPrevious: ContainerInspect | null,
+    signal: AbortSignal,
+  ): Promise<number> {
+    await this.ensureProxyImage(signal);
+    const upstream = `${ACTIVE_ALIAS}:${desired.containerPort}`;
+    const proxy = await this.ownedContainer(this.proxyName(desired), desired, signal);
+    let reuse: number | null = null;
+    if (proxy) {
+      const labelled = Number(proxy.Config?.Labels?.[HOST_PORT_LABEL]);
+      const port = Number.isInteger(labelled) && labelled > 0 ? labelled : null;
+      if (
+        port &&
+        proxy.Config?.Image === this.proxyImage &&
+        proxy.Config?.Labels?.[PROXY_UPSTREAM_LABEL] === upstream
+      ) {
+        if (!proxy.State?.Running) {
+          await this.expect(
+            [204, 304],
+            { method: 'POST', path: `/containers/${encodeURIComponent(proxy.Id)}/start`, signal },
+            'start proxy',
+          );
+        }
+        return port;
+      }
+      // The upstream port or the pinned image changed: a short gap is accepted.
+      reuse = port;
+      await this.removeContainer(proxy.Id, signal);
+    } else if (legacyPrevious) {
+      const bound = this.legacyHostPort(legacyPrevious, desired.containerPort);
+      await this.removeContainer(legacyPrevious.Id, signal);
+      reuse = bound;
+    }
+    return this.createProxy(desired, upstream, jobId, reuse, signal);
+  }
+
+  private async createProxy(
+    desired: DockerLifecyclePayload,
+    upstream: string,
+    jobId: string,
+    reusePort: number | null,
+    signal: AbortSignal,
+  ): Promise<number> {
+    const tried = new Set<number>();
+    let hostPort = reusePort;
+    const {
+      'com.initpad.revision': _revision,
+      'com.initpad.config-fingerprint': _fingerprint,
+      ...base
+    } = this.labels(desired, jobId);
+    for (let attempt = 1; ; attempt += 1) {
+      if (hostPort === null) hostPort = await this.allocateDirectPort(desired, tried, signal);
+      const portKey = `${PROXY_CONTAINER_PORT}/tcp`;
+      const tmpfs = 'rw,noexec,nosuid,size=16m';
+      const [upstreamHost, upstreamPort] = upstream.split(':');
+      const created = responseJson<{ Id: string }>(
+        await this.request({
+          method: 'POST',
+          path: `/containers/create?name=${encodeURIComponent(this.proxyName(desired))}`,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            Image: this.proxyImage,
+            Entrypoint: ['/bin/sh', '-ec'],
+            Cmd: [PROXY_SCRIPT],
+            Env: [`UPSTREAM_HOST=${upstreamHost}`, `UPSTREAM_PORT=${upstreamPort}`],
+            Labels: {
+              ...base,
+              [ROLE_LABEL]: 'proxy',
+              [HOST_PORT_LABEL]: String(hostPort),
+              [PROXY_UPSTREAM_LABEL]: upstream,
+            },
+            ExposedPorts: { [portKey]: {} },
+            HostConfig: {
+              NetworkMode: this.networkName(desired),
+              PortBindings: { [portKey]: [{ HostIp: '0.0.0.0', HostPort: String(hostPort) }] },
+              ReadonlyRootfs: true,
+              Tmpfs: { '/tmp': tmpfs, '/data': tmpfs, '/config': tmpfs },
+              Memory: 64 * 1024 * 1024,
+              MemorySwap: 64 * 1024 * 1024,
+              NanoCpus: 250_000_000,
+              PidsLimit: 64,
+              CapDrop: ['ALL'],
+              // The Caddy binary carries file capabilities and needs this in the bounding set.
+              CapAdd: ['NET_BIND_SERVICE'],
+              SecurityOpt: ['no-new-privileges'],
+              RestartPolicy: { Name: 'unless-stopped' },
+              LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
+            },
+          }),
+          signal,
+        }),
+        'create proxy',
+      );
+      try {
+        await this.expect(
+          [204, 304],
+          { method: 'POST', path: `/containers/${encodeURIComponent(created.Id)}/start`, signal },
+          'start proxy',
+        );
+      } catch (error) {
+        await this.removeContainer(created.Id, signal).catch(() => undefined);
+        const message = error instanceof Error ? error.message : '';
+        if (attempt < MAX_PORT_ATTEMPTS && PORT_CONFLICT.test(message)) {
+          // Something outside Docker took the port; move to the next free one.
+          tried.add(hostPort);
+          hostPort = null;
+          continue;
+        }
+        throw error;
+      }
+      return hostPort;
+    }
+  }
+
+  /** Stops and removes revisions renamed aside by earlier switches. */
+  private async retireLeftovers(
+    desired: DockerLifecyclePayload,
+    signal: AbortSignal,
+  ): Promise<void> {
+    for (const container of await this.retiringContainers(desired, signal)) {
+      await this.expect(
+        [204, 304, 404],
+        {
+          method: 'POST',
+          path: `/containers/${encodeURIComponent(container.Id)}/stop?t=10`,
+          signal,
+        },
+        'stop retiring revision',
+      );
+      await this.removeContainer(container.Id, signal);
+    }
+  }
+
+  private async retiringContainers(
+    desired: Pick<DockerLifecyclePayload, 'allocationId' | 'projectSlug' | 'environment'>,
+    signal: AbortSignal,
+  ): Promise<ContainerListItem[]> {
+    const containers = responseJson<ContainerListItem[]>(
+      await this.request({
+        method: 'GET',
+        path: '/containers/json?all=1',
+        maxResponseBytes: 16 * 1024 * 1024,
+        signal,
+      }),
+      'list retiring revisions',
+    );
+    const key = this.workloadKey(desired);
+    return (Array.isArray(containers) ? containers : []).filter((container) => {
+      const labels = container.Labels ?? {};
+      return (
+        labels['com.initpad.target'] === this.targetId &&
+        labels['com.initpad.allocation.id'] === desired.allocationId &&
+        labels['com.initpad.workload'] === key &&
+        container.Names?.some((name) => name.includes('-retiring-'))
+      );
+    });
+  }
+
+  private proxyName(
+    payload: Pick<
+      DockerLifecyclePayload,
+      'allocationId' | 'namespace' | 'projectSlug' | 'environment'
+    >,
+  ): string {
+    return boundedDockerName(`${workloadContainerName(payload)}-proxy`);
+  }
+
+  private retiringName(payload: DockerLifecyclePayload, revision: string | undefined): string {
+    const suffix = dockerNamePart(revision ?? 'previous').slice(0, 12) || 'previous';
+    return `${this.containerName(payload).slice(0, 108)}-retiring-${suffix}`;
+  }
+
+  /** A revision from an older Agent publishes a public port or carries the host-port label. */
+  private isLegacyDirect(container: ContainerInspect): boolean {
+    if (container.Config?.Labels?.[BEHIND_PROXY_LABEL] === 'true') return false;
+    if (container.Config?.Labels?.[HOST_PORT_LABEL]) return true;
+    return Object.values(container.NetworkSettings?.Ports ?? {}).some((bindings) =>
+      (bindings ?? []).some((binding) => binding.HostIp === '0.0.0.0' || binding.HostIp === '::'),
+    );
+  }
+
+  private legacyHostPort(container: ContainerInspect, containerPort: number): number | null {
+    const labelled = Number(container.Config?.Labels?.[HOST_PORT_LABEL]);
+    if (Number.isInteger(labelled) && labelled > 0) return labelled;
+    const bound = Number(
+      container.NetworkSettings?.Ports?.[`${containerPort}/tcp`]?.find(
+        (binding) => binding.HostIp === '0.0.0.0',
+      )?.HostPort,
+    );
+    return Number.isInteger(bound) && bound > 0 ? bound : null;
   }
 
   private async allocateDirectPort(
@@ -898,15 +1294,18 @@ export class DockerLifecycle {
   async stop(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
     const desired = this.validatedPayload(payload);
     const container = await this.desiredContainer(desired, signal);
-    if (!container || !container.State?.Running) return;
+    if (container?.State?.Running) await this.stopContainer(container.Id, 'stop container', signal);
+    if (desired.routingMode === 'direct-port') {
+      const proxy = await this.ownedContainer(this.proxyName(desired), desired, signal);
+      if (proxy?.State?.Running) await this.stopContainer(proxy.Id, 'stop proxy', signal);
+    }
+  }
+
+  private async stopContainer(id: string, action: string, signal: AbortSignal): Promise<void> {
     await this.expect(
       [204, 304],
-      {
-        method: 'POST',
-        path: `/containers/${encodeURIComponent(container.Id)}/stop?t=10`,
-        signal,
-      },
-      'stop container',
+      { method: 'POST', path: `/containers/${encodeURIComponent(id)}/stop?t=10`, signal },
+      action,
     );
   }
 
@@ -934,13 +1333,27 @@ export class DockerLifecycle {
         `Workload failed its health check after start: ${this.healthFailure(health)}`,
       );
     }
+    if (desired.routingMode === 'direct-port' && started && !this.isLegacyDirect(started)) {
+      await this.activateRevision(started.Id, desired, signal);
+      await this.ensureProxyAfterSwitch(desired, 'agent-start', null, signal);
+    }
   }
 
   async remove(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<void> {
     const desired = this.validatedPayload(payload);
-    for (const name of [this.containerName(desired), this.candidateName(desired)]) {
+    const names = [this.containerName(desired), this.candidateName(desired)];
+    if (desired.routingMode === 'direct-port') {
+      // The proxy goes first so nothing answers on the public port any more.
+      names.unshift(this.proxyName(desired));
+    }
+    for (const name of names) {
       const container = await this.ownedContainer(name, desired, signal);
       if (container) await this.removeContainer(container.Id, signal);
+    }
+    if (desired.routingMode === 'direct-port') {
+      for (const leftover of await this.retiringContainers(desired, signal)) {
+        await this.removeContainer(leftover.Id, signal);
+      }
     }
     for (const name of this.legacyContainerNames(desired)) {
       const container = await this.legacyOwnedContainer(name, desired, signal);
@@ -975,7 +1388,7 @@ export class DockerLifecycle {
   ): Promise<DockerWorkloadStatus> {
     const desired = this.validatedPayload(payload);
     const container = await this.desiredContainer(desired, signal);
-    return container ? this.toStatus(container, desired) : { state: 'missing' };
+    return container ? this.workloadStatus(container, desired, signal) : { state: 'missing' };
   }
 
   async healthy(payload: DockerLifecyclePayload, signal: AbortSignal): Promise<boolean> {
@@ -1008,7 +1421,7 @@ export class DockerLifecycle {
     }
     if (!container) return { state: 'missing', health: 'missing', logs: '' };
 
-    const status = this.toStatus(container, payload);
+    const status = await this.workloadStatus(container, payload, signal);
     const logs = await this.containerLogs(container.Id, signal);
     const exitCode = Number(container.State?.ExitCode);
     if (status.state !== 'running') {
@@ -1329,6 +1742,28 @@ export class DockerLifecycle {
       .slice(-3)
       .join(' | ')
       .slice(-160);
+  }
+
+  /**
+   * Direct-port environments report the proxy's stable port, or the public
+   * binding of a revision that an older Agent created. A revision behind a
+   * proxy only has a loopback health port, which is never an address.
+   */
+  private async workloadStatus(
+    container: ContainerInspect,
+    payload: DockerLifecyclePayload | DockerDiagnosticPayload,
+    signal: AbortSignal,
+  ): Promise<DockerWorkloadStatus> {
+    const status = this.toStatus(container, payload);
+    if (payload.routingMode !== 'direct-port') return status;
+    const { hostPort: _revisionPort, ...rest } = status;
+    const proxy = await this.ownedContainer(this.proxyName(payload), payload, signal);
+    const proxyPort = Number(
+      proxy?.NetworkSettings?.Ports?.[`${PROXY_CONTAINER_PORT}/tcp`]?.[0]?.HostPort ??
+        proxy?.Config?.Labels?.[HOST_PORT_LABEL],
+    );
+    if (Number.isInteger(proxyPort) && proxyPort > 0) return { ...rest, hostPort: proxyPort };
+    return this.isLegacyDirect(container) && _revisionPort ? status : rest;
   }
 
   private toStatus(
