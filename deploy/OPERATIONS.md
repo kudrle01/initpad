@@ -582,6 +582,11 @@ Produkční instalace s výchozím `stable` kanálem jej uvidí až po tomto kro
   spusť `./install.sh`, zapiš ji plnou adresou
   (`uses: https://github.com/owner/name@<ref>`), nebo zrcadla vypni
   `INITPAD_CI_ACTIONS_MIRRORS=off`.
+- **CI projektů čeká a log `act_runner` ukazuje joby repozitářů `actions/…`
+  nebo `docker/…`:** zrcadla akcí založená instalátorem 0.2.35 až 0.2.47 mají
+  zapnuté Actions a jejich upstream workflow obsazují runner (ADR-190). Spusť
+  `./install.sh` z checkoutu s opravou, Actions v zrcadlech vypne. Joby, které
+  už čekají, Gitea zruší sama po 24 hodinách (`ABANDONED_JOB_TIMEOUT`).
 
 ## Příloha: historické postupy 0.2.0 a 0.2.1
 

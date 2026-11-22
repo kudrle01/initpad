@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -260,6 +260,117 @@ test('enables the CI action mirror only after verifying it (ADR-171)', () => {
     installer.indexOf('say "Preparing CI action mirrors"') <
       installer.indexOf('say "Starting the CI runner"'),
   );
+});
+
+const pinnedCheckout = 'a'.repeat(40);
+
+// Runs the real mirror functions against a stub Gitea API that answers from
+// `responses` (`'METHOD /path': status`) and records every call.
+function runActionMirrors(responses, envText = '') {
+  const work = mkdtempSync(join(tmpdir(), 'initpad-action-mirrors-'));
+  const deploy = join(work, 'deploy');
+  const workflows = join(work, 'templates/node/files/.gitea/workflows');
+  mkdirSync(join(deploy, 'runner'), { recursive: true });
+  mkdirSync(workflows, { recursive: true });
+  writeFileSync(join(deploy, 'runner/actions-mirror'), '# comment\nactions/checkout\n');
+  writeFileSync(
+    join(workflows, 'ci.yml'),
+    `jobs:\n  build:\n    steps:\n      - uses: actions/checkout@${pinnedCheckout}\n`,
+  );
+  writeFileSync(join(deploy, '.env'), envText);
+  const answers = Object.entries(responses)
+    .map(([call, status]) => `    ${JSON.stringify(call)}) echo ${status} ;;`)
+    .join('\n');
+  const helpers = installer.slice(
+    installer.indexOf('get_env() {'),
+    installer.indexOf('# This stack bundles Gitea'),
+  );
+  const mirrors = installer.slice(
+    installer.indexOf('ensure_action_mirror() {'),
+    installer.indexOf('say "Preparing CI action mirrors"'),
+  );
+  const script = [
+    'set -euo pipefail',
+    'say() { :; }',
+    'warn() { printf "%s\\n" "$*" >&2; }',
+    'sleep() { :; }',
+    'gitea_api() {',
+    '  printf "%s %s %s\\n" "$1" "$2" "$(cat)" >>calls.log',
+    '  case "$1 $2" in',
+    answers,
+    '    *) echo 599 ;;',
+    '  esac',
+    '}',
+    helpers,
+    mirrors,
+    'mirror_ci_actions',
+  ].join('\n');
+  const result = spawnSync('bash', ['-c', script], { cwd: deploy, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  let calls = [];
+  try {
+    calls = readFileSync(join(deploy, 'calls.log'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((call) => call.trimEnd());
+  } catch {
+    // No call reached the Gitea API.
+  }
+  return { ...result, calls, env: readFileSync(join(deploy, '.env'), 'utf8') };
+}
+
+const actionsOff = 'PATCH /repos/actions/checkout {"has_actions":false}';
+const mirrorReady = {
+  'GET /orgs/actions': 200,
+  'GET /repos/actions/checkout': 200,
+  'PATCH /repos/actions/checkout': 200,
+  [`GET /repos/actions/checkout/git/commits/${pinnedCheckout}`]: 200,
+};
+
+test('turns off Actions in an existing CI action mirror on every run (ADR-190)', () => {
+  const result = runActionMirrors(mirrorReady);
+
+  assert.ok(result.calls.includes(actionsOff), result.calls.join('\n'));
+  assert.ok(!result.calls.some((call) => call.startsWith('POST /repos/migrate')));
+  assert.match(result.env, /^INITPAD_CI_ACTIONS_MIRROR=http:\/\/host\.docker\.internal:3001$/m);
+});
+
+test('creates a CI action mirror with Actions turned off (ADR-190)', () => {
+  const result = runActionMirrors({
+    ...mirrorReady,
+    'GET /orgs/actions': 404,
+    'POST /orgs': 201,
+    'GET /repos/actions/checkout': 404,
+    'POST /repos/migrate': 201,
+  });
+
+  const migrate = result.calls.findIndex((call) => call.startsWith('POST /repos/migrate '));
+  assert.ok(migrate >= 0, result.calls.join('\n'));
+  assert.match(result.calls[migrate], /"mirror":true/);
+  assert.ok(result.calls.indexOf(actionsOff) > migrate, 'Actions must be turned off after migrate');
+  assert.match(result.env, /^INITPAD_CI_ACTIONS_MIRROR=http:\/\/host\.docker\.internal:3001$/m);
+});
+
+test('does not use a CI action mirror whose Actions stay on (ADR-190)', () => {
+  const result = runActionMirrors({ ...mirrorReady, 'PATCH /repos/actions/checkout': 403 });
+
+  assert.match(
+    result.stderr,
+    /Could not turn off Actions in the CI action mirror actions\/checkout/,
+  );
+  assert.match(result.env, /^INITPAD_CI_ACTIONS_MIRROR=$/m);
+});
+
+test('turns off Actions in leftover mirrors when mirrors are off (ADR-190)', () => {
+  const existing = runActionMirrors(mirrorReady, 'INITPAD_CI_ACTIONS_MIRRORS=off\n');
+  assert.deepEqual(existing.calls, ['GET /repos/actions/checkout', actionsOff]);
+  assert.match(existing.env, /^INITPAD_CI_ACTIONS_MIRROR=$/m);
+
+  const none = runActionMirrors(
+    { 'GET /repos/actions/checkout': 404 },
+    'INITPAD_CI_ACTIONS_MIRRORS=off\n',
+  );
+  assert.deepEqual(none.calls, ['GET /repos/actions/checkout']);
 });
 
 test('keeps API deployment working files on disk, not in tmpfs (ADR-172)', () => {

@@ -311,6 +311,11 @@ alerty a incident acceptance popsané v
   vytvořit nebo ověřit zrcadla akcí ze `runner/actions-mirror` (ADR-171). CI
   funguje dál, jen každý job stahuje akce z GitHubu. Spusťte `./install.sh`
   znovu, až bude github.com dostupný.
+- **`Could not turn off Actions in the CI action mirror …`:** Gitea odmítla
+  zrcadlu vypnout Actions, takže jeho upstream workflow můžou obsazovat sdílený
+  runner (ADR-190). CI joby do té doby stahují akce z GitHubu. Zkontrolujte, že
+  token `INITPAD_GITEA_TOKEN` patří administrátorovi, a spusťte `./install.sh`
+  znovu.
 - **Workflow importovaného repozitáře padá na `uses: owner/name@…`:** CI joby
   berou krátce zapsané akce jen ze zrcadel v Gitee a act_runner nemá pro
   nezrcadlenou akci záložní cestu na github.com. Přidejte ji do

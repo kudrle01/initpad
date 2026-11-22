@@ -851,14 +851,32 @@ EOF
     return 1
   fi
   status=$(gitea_api GET "/repos/$owner/$name" </dev/null)
-  [ "$status" = 200 ] && return 0
-  [ "$status" = 404 ] || { warn "Could not look up the CI action mirror $owner/$name (HTTP $status)."; return 1; }
-  say "Mirroring CI action $owner/$name from github.com"
-  status=$(gitea_api POST /repos/migrate <<EOF
+  if [ "$status" = 404 ]; then
+    say "Mirroring CI action $owner/$name from github.com"
+    status=$(gitea_api POST /repos/migrate <<EOF
 {"clone_addr":"https://github.com/$owner/$name.git","repo_owner":"$owner","repo_name":"$name","mirror":true,"private":false,"service":"git","description":"Pull mirror of https://github.com/$owner/$name"}
 EOF
 )
-  [ "$status" = 201 ] || { warn "Could not mirror https://github.com/$owner/$name (HTTP $status)."; return 1; }
+    [ "$status" = 201 ] || { warn "Could not mirror https://github.com/$owner/$name (HTTP $status)."; return 1; }
+  elif [ "$status" != 200 ]; then
+    warn "Could not look up the CI action mirror $owner/$name (HTTP $status)."
+    return 1
+  fi
+  disable_mirror_actions "$owner/$name"
+}
+
+# Gitea turns Actions on for every new repository, and each mirror sync then
+# runs the upstream push and scheduled workflows on the shared global runner,
+# where they starved project CI (ADR-190). The migrate API cannot leave the
+# unit out, so it is switched off afterwards on every run, which also repairs
+# mirrors made by an older installer. Repeating the edit is harmless.
+disable_mirror_actions() { # <owner/name>
+  local status
+  status=$(gitea_api PATCH "/repos/$1" <<'EOF'
+{"has_actions":false}
+EOF
+)
+  [ "$status" = 200 ] || { warn "Could not turn off Actions in the CI action mirror $1 (HTTP $status)."; return 1; }
 }
 
 action_commit_mirrored() { # <owner/name> <sha>
@@ -879,14 +897,19 @@ mirror_ci_actions() {
   runner_url=${runner_url:-http://host.docker.internal:3001}
   runner_url=${runner_url%/}
   [ "$(get_env INITPAD_CI_ACTIONS_MIRRORS || true)" = off ] && ok=off
-  while [ "$ok" != off ] && IFS= read -r entry; do
+  while IFS= read -r entry; do
     case "$entry" in ''|'#'*) continue ;; esac
     if ! printf '%s\n' "$entry" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
       warn "Invalid entry in deploy/runner/actions-mirror: $entry"
-      ok=no
+      [ "$ok" = off ] || ok=no
       continue
     fi
-    ensure_action_mirror "$entry" || ok=no
+    if [ "$ok" != off ]; then
+      ensure_action_mirror "$entry" || ok=no
+    elif [ "$(gitea_api GET "/repos/$entry" </dev/null)" = 200 ]; then
+      # Mirrors made before the switch stay in Gitea and keep syncing.
+      disable_mirror_actions "$entry" || true
+    fi
   done < runner/actions-mirror
   if [ "$ok" = yes ]; then
     for ref in $(grep -rhoE 'uses: *[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' \
