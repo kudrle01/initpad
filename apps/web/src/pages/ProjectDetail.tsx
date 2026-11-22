@@ -213,7 +213,6 @@ export default function ProjectDetail() {
         'Approval starts deployment of the exact reviewed build to the recorded production server.',
       ),
       confirmLabel: t('Approve and deploy'),
-      tone: 'danger',
       details: [
         { label: t('Project'), value: currentProject.name },
         { label: t('Version'), value: productionRequest.version.slice(0, 12) },

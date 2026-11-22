@@ -84,6 +84,7 @@ export function useProjectDetail() {
   const [configEnv, setConfigEnv] = useState<EnvName | null>(null);
   const [diagnosticEnv, setDiagnosticEnv] = useState<EnvName | null>(null);
   const [targets, setTargets] = useState<Target[]>([]);
+  const [pollTick, setPollTick] = useState(0);
   const pollInFlight = useRef(false);
   // Every load takes a number; only a newer answer may replace what is shown,
   // and switching projects aborts the requests of the previous one.
@@ -183,18 +184,40 @@ export function useProjectDetail() {
       error || isLive(project, commits, deployments, provisioning, ciRerunRequested)
         ? ACTIVE_PROJECT_POLL_MS
         : IDLE_PROJECT_POLL_MS;
+    // A hidden tab does not poll at all; the visibility and focus handler below
+    // refreshes immediately and restarts the cycle. Every finished poll bumps
+    // pollTick, so the next timer is armed even when the answer changed nothing
+    // (for example a repeated error). The cleanup keeps one timer at a time.
     const timer = setTimeout(() => {
-      if (document.visibilityState === 'visible') void load('head');
+      if (document.visibilityState === 'visible') {
+        void load('head').finally(() => setPollTick((tick) => tick + 1));
+      }
     }, delay);
     return () => clearTimeout(timer);
-  }, [project, commits, deployments, provisioning, load, error, notFound, ciRerunRequested]);
+  }, [
+    project,
+    commits,
+    deployments,
+    provisioning,
+    load,
+    error,
+    notFound,
+    ciRerunRequested,
+    pollTick,
+  ]);
 
   useEffect(() => {
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') void load('head');
+      if (document.visibilityState === 'visible') {
+        void load('head').finally(() => setPollTick((tick) => tick + 1));
+      }
     };
     document.addEventListener('visibilitychange', refreshWhenVisible);
-    return () => document.removeEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshWhenVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('focus', refreshWhenVisible);
+    };
   }, [load]);
 
   useEffect(() => {
