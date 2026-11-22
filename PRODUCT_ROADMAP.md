@@ -332,6 +332,12 @@ Jde o budoucí práci mimo rozsah diplomové práce.
       `index.html` hlavičku `Cache-Control: no-cache` a readiness hlásí
       databázi i úložiště artefaktů jako dostupné. Automatické obnovení
       záložky se naživo projeví až při přechodu z 0.2.32 na další release.
+    - Dne 21. listopadu 2026 servíroval veřejný origin stagingu všech sedm
+      souborů webu se stejnými hashi jako čistý build tagu `initpad-v0.2.47`.
+      Zdroj webu se mezi 0.2.46 a 0.2.47 změnil, shoda tedy ukazuje na
+      release 0.2.47. Podle záznamu uživatelského testu na tomto stavu
+      proběhlo uživatelské ověření. Datum přechodu z 0.2.32, verze API
+      a Agenta ani aplikované migrace zapsané nejsou, živě ověřený je jen web.
 - [x] Vynutit egress firewall, edge/WAF a volumetrickou ochranu nad aplikační
   SSRF a rate-limit vrstvou.
   - [x] Uzamknout podporovanou SaaS proxy cestu na veřejný edge/WAF, loopback
