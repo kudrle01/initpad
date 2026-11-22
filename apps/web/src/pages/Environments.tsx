@@ -62,7 +62,7 @@ function EnvironmentRow({ environment }: { environment: Environment }) {
           {environment.version ? `v${environment.version.slice(0, 7)}` : '—'}
         </span>
         {externalHref(environment.url) ? (
-          <AppUrlLink url={environment.url} className="md:text-sm" />
+          <AppUrlLink url={environment.url} />
         ) : (
           <span className="hidden md:inline">—</span>
         )}
