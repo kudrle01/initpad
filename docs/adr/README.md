@@ -201,3 +201,4 @@ stabilní.
 | [ADR-187](./ADR-187.md) | Accepted | Odkazy vestavěného testovacího prostředí mimo HTTPS doménu platformy |
 | [ADR-188](./ADR-188.md) | Accepted | Registrace e-mailem v SaaS a pozvánky do workspace se souhlasem |
 | [ADR-189](./ADR-189.md) | Accepted | Týmový workspace se připojuje ke GitHub organizaci a zve do ní členy |
+| [ADR-190](./ADR-190.md) | Accepted | Zrcadla CI akcí mají vypnuté Actions |
