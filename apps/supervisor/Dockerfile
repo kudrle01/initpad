@@ -15,7 +15,7 @@ COPY package.json package-lock.json ./
 COPY apps/supervisor/package.json apps/supervisor/
 RUN npm ci --omit=dev --workspace @initpad/supervisor --include-workspace-root=false
 
-FROM mirror.gcr.io/library/docker:29.9.3-cli@sha256:5a7af0dcb0e46c803efe9b45371dd21cb500e5b4453250394ac6f06d49b6e6f1 AS docker-cli
+FROM mirror.gcr.io/library/docker:29.10.0-cli@sha256:34507eb5069d8be82c95dd3b6987d4250fd5fee49b82e2509b7d7a7030740d6d AS docker-cli
 
 FROM mirror.gcr.io/library/node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
 LABEL org.opencontainers.image.title="InitPad Supervisor"
