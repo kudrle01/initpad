@@ -55,7 +55,7 @@ services:
   # S3-compatible object storage for verified build artifacts (ADR-059,
   # ADR-163), the same SeaweedFS gateway as the deploy/ stack.
   s3:
-    image: chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
+    image: chrislusf/seaweedfs:4.54@sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15
     command: server -dir=/data -s3 -s3.port=9000 -ip.bind=0.0.0.0 -volume.max=5
     environment:
       AWS_ACCESS_KEY_ID: ${INITPAD_DEV_S3_ACCESS_KEY_ID:-initpad}
@@ -72,7 +72,7 @@ services:
     networks: [platform]
 
   s3-init:
-    image: chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
+    image: chrislusf/seaweedfs:4.54@sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15
     depends_on:
       s3: { condition: service_healthy }
     entrypoint:
@@ -172,7 +172,7 @@ services:
 
   # Serves the uploaded static content (releases published via symlinks).
   static-web:
-    image: nginx:alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
+    image: nginx:alpine@sha256:fb4658584bd9a916ffb6f6e365f97c25cfdb2923801f551ea08356e695f14ff7
     depends_on: [fake-sftp]
     ports:
       - "8086:80" # INITPAD_SFTP_PUBLIC_URL in apps/api/.env

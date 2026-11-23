@@ -35,7 +35,7 @@ services:
   # variables at real S3 and can drop this service. The `minio` alias keeps
   # older .env files with INITPAD_ARTIFACT_S3_ENDPOINT=http://minio:9000 working.
   s3:
-    image: chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
+    image: chrislusf/seaweedfs:4.54@sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15
     command: server -dir=/data -s3 -s3.port=9000 -ip.bind=0.0.0.0 -volume.max=20
     environment:
       # The S3 gateway creates one admin identity from these two variables.
@@ -60,7 +60,7 @@ services:
   # One-shot: wait for the S3 gateway, create the PRIVATE artifact bucket, then exit.
   # It reuses the SeaweedFS image (`weed shell`), so no separate client image.
   s3-init:
-    image: chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
+    image: chrislusf/seaweedfs:4.54@sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15
     depends_on:
       s3: { condition: service_healthy }
     environment:
@@ -554,7 +554,7 @@ services:
     restart: unless-stopped
 
   static-web:
-    image: nginx:alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
+    image: nginx:alpine@sha256:fb4658584bd9a916ffb6f6e365f97c25cfdb2923801f551ea08356e695f14ff7
     depends_on: [fake-sftp]
     ports:
       - '${INITPAD_STATIC_WEB_PORT:-8085}:80'
@@ -575,7 +575,7 @@ services:
   # --- reverse proxy with automatic HTTPS (server installs only) -----------
 
   caddy:
-    image: caddy:2-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
+    image: caddy:2-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
     profiles: ['server']
     ports:
       - '80:80'

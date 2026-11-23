@@ -117,7 +117,7 @@ services:
   # into the Agent, while the edge itself never receives the Docker socket or
   # the private Caddy admin socket.
   agent-lab-edge:
-    image: caddy:2.11-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
+    image: caddy:2.11-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
     profiles: ["agent-lab"]
     environment:
       INITPAD_AGENT_LAB_GATEWAY_DOMAIN: ${INITPAD_AGENT_LAB_GATEWAY_DOMAIN:-apps.initpad.test}
